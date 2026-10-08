@@ -706,6 +706,10 @@ interface DatabaseDao {
     @Query("SELECT id FROM song WHERE id IN (:songIds)")
     suspend fun existingSongIds(songIds: List<String>): List<String>
 
+    // Re-emits when MusicService saves an episode's playbackPosition.
+    @Query("SELECT * FROM song WHERE id IN (:songIds)")
+    fun songEntitiesByIds(songIds: List<String>): Flow<List<SongEntity>>
+
 
     @Transaction
     @Query("SELECT * FROM song_artist_map WHERE songId = :songId")
