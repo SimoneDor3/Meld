@@ -2754,7 +2754,8 @@ class MusicService :
             val savedPosition = database.getPlaybackPosition(episodeId)
             if (savedPosition != null && savedPosition > 0) {
                 withContext(Dispatchers.Main) {
-                    if (player.currentMediaItem?.mediaId == episodeId) {
+                    // Only move forward: playback may already start further in, from YouTube's progress.
+                    if (player.currentMediaItem?.mediaId == episodeId && player.currentPosition < savedPosition) {
                         player.seekTo(savedPosition)
                         Timber.tag(TAG).d("Restored episode position: $episodeId to ${savedPosition}ms")
                     }

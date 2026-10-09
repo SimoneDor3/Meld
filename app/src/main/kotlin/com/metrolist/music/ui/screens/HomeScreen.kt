@@ -2767,11 +2767,13 @@ fun HomeScreen(
                                             if (podcast.id != null) {
                                                 podcastSheetId = podcast.id
                                             } else {
-                                                val episode = podcast.latestEpisode.song
+                                                val latest = podcast.latestEpisode
+                                                val episode = latest.song
                                                 playerConnection.playQueue(
                                                     ListQueue(
                                                         title = episode.artists.firstOrNull()?.name,
                                                         items = listOf(episode.toMediaMetadata().toMediaItem()),
+                                                        position = latest.resumePositionMs,
                                                     ),
                                                 )
                                             }

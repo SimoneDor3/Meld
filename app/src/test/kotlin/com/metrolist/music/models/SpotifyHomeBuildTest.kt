@@ -14,7 +14,13 @@ import org.junit.Test
 
 class SpotifyHomeBuildTest {
 
-    private fun episode(id: String, durationSec: Int = 3600, show: String = "Show $id", album: Album? = null) = SongItem(
+    private fun episode(
+        id: String,
+        durationSec: Int = 3600,
+        show: String = "Show $id",
+        album: Album? = null,
+        youTubeProgress: Float? = null,
+    ) = SongItem(
         id = id,
         title = "Episode $id",
         artists = listOf(Artist(name = show, id = null)),
@@ -22,6 +28,7 @@ class SpotifyHomeBuildTest {
         duration = durationSec,
         thumbnail = "https://i.ytimg.com/vi/$id/hqdefault.jpg",
         isEpisode = true,
+        playbackProgress = youTubeProgress,
     )
 
     private fun played(id: String, positionMs: Long, durationSec: Int = 3600) =
@@ -60,6 +67,49 @@ class SpotifyHomeBuildTest {
         val done = episode("c").toHomeEpisode(played("c", positionMs = 3_580_000))
         assertFalse(done.isNew)
         assertNull(done.progress)
+    }
+
+    @Test
+    fun `YouTube-only progress shows the bar and resumes from YouTube's position`() {
+        val partial = episode("a", youTubeProgress = 0.4f).toHomeEpisode(local = null)
+        assertFalse(partial.isNew)
+        assertEquals(0.4f, partial.progress!!, 0.001f)
+        assertEquals(1_440_000L, partial.resumePositionMs)
+    }
+
+    @Test
+    fun `YouTube completed episode is neither new nor in progress`() {
+        val done = episode("a", youTubeProgress = 0.98f).toHomeEpisode(local = null)
+        assertFalse(done.isNew)
+        assertNull(done.progress)
+        assertEquals(0L, done.resumePositionMs)
+
+        val doneOnYouTubeOnly = episode("b", youTubeProgress = 1f).toHomeEpisode(played("b", positionMs = 900_000))
+        assertNull(doneOnYouTubeOnly.progress)
+    }
+
+    @Test
+    fun `local position ahead of YouTube wins and playback resumes locally`() {
+        val state = episode("a", youTubeProgress = 0.1f).toHomeEpisode(played("a", positionMs = 1_800_000))
+        assertFalse(state.isNew)
+        assertEquals(0.5f, state.progress!!, 0.001f)
+        assertEquals(0L, state.resumePositionMs)
+    }
+
+    @Test
+    fun `YouTube ahead of local shows and resumes from YouTube's position`() {
+        val state = episode("a", youTubeProgress = 0.75f).toHomeEpisode(played("a", positionMs = 900_000))
+        assertFalse(state.isNew)
+        assertEquals(0.75f, state.progress!!, 0.001f)
+        assertEquals(2_700_000L, state.resumePositionMs)
+    }
+
+    @Test
+    fun `no progress from either source is new`() {
+        val state = episode("a", youTubeProgress = null).toHomeEpisode(played("a", positionMs = 0))
+        assertTrue(state.isNew)
+        assertNull(state.progress)
+        assertEquals(0L, state.resumePositionMs)
     }
 
     @Test

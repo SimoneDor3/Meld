@@ -2583,6 +2583,7 @@ object YouTube {
                                 duration = duration,
                                 thumbnail = renderer.thumbnail?.getThumbnailUrl() ?: "",
                                 isEpisode = true,
+                                playbackProgress = renderer.playbackProgress?.fraction,
                             )
                         )
                     }
@@ -2635,6 +2636,7 @@ object YouTube {
                                     duration = duration,
                                     thumbnail = renderer.thumbnail?.getThumbnailUrl() ?: "",
                                     isEpisode = true,
+                                    playbackProgress = renderer.playbackProgress?.fraction,
                                 )
                             )
                         }
