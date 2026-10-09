@@ -1831,7 +1831,7 @@ fun HomeScreen(
                     when (section) {
                         HomeSection.SpeedDial -> {
                             // On the Spotify home the speed dial is placed by the user's section layout instead.
-                            if (!(isSpotifyHome && spotifyHomeSections != null)) speedDialSection()
+                            if (!(isSpotifyHome && isSpotifyHomeOnly && spotifyHomeSections != null)) speedDialSection()
                         }
 
                         HomeSection.QuickPicks -> {
@@ -2662,7 +2662,8 @@ fun HomeScreen(
                     }
                     spotifyHomeSections?.forEachIndexed { index, section ->
                         if (section.type == SectionType.SPEED_DIAL) {
-                            speedDialSection()
+                            // In mixed mode the speed dial stays with the YouTube sections above.
+                            if (isSpotifyHomeOnly) speedDialSection()
                             return@forEachIndexed
                         }
                         if (section.title.isNotEmpty()) {
