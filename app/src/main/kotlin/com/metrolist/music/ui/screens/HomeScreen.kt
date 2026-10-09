@@ -706,6 +706,7 @@ fun HomeScreen(
     val spotifyHomeFilter by viewModel.spotifyHomeFilter.collectAsStateWithLifecycle()
     val podcastNewEpisodes by viewModel.podcastNewEpisodes.collectAsStateWithLifecycle()
     val isSpotifyHome by viewModel.useSpotifyHome.collectAsStateWithLifecycle()
+    val showPodcastSuggestions by viewModel.showPodcastSuggestions.collectAsStateWithLifecycle()
     val isSpotifyHomeOnly by viewModel.spotifyHomeOnly.collectAsStateWithLifecycle()
     val pinnedSpeedDialIds by viewModel.pinnedSpeedDialIds.collectAsStateWithLifecycle()
     val spotifyMapper = remember { SpotifyYouTubeMapper(database) }
@@ -1247,7 +1248,7 @@ fun HomeScreen(
                 item {
                     if (isSpotifyHome && spotifyHomeSections != null) {
                         // Podcast chips only make sense once the YouTube Music library has podcasts.
-                        if (podcastNewEpisodes.isNotEmpty() || savedPodcastShows.isNotEmpty()) {
+                        if (showPodcastSuggestions && (podcastNewEpisodes.isNotEmpty() || savedPodcastShows.isNotEmpty())) {
                             ChipsRow(
                                 chips = listOf(
                                     SpotifyHomeFilter.ALL to stringResource(R.string.filter_all),
