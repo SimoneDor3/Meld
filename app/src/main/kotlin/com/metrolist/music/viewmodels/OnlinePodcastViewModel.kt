@@ -13,6 +13,7 @@ import com.metrolist.music.utils.reportException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +36,7 @@ class OnlinePodcastViewModel @Inject constructor(
 
     val podcast = MutableStateFlow<PodcastItem?>(null)
     val episodes = MutableStateFlow<List<EpisodeItem>>(emptyList())
+    private var fetchJob: Job? = null
 
     val libraryPodcast = podcast.flatMapLatest { p ->
         p?.let { database.podcast(it.id) } ?: flowOf(null)
@@ -51,15 +53,18 @@ class OnlinePodcastViewModel @Inject constructor(
         podcastId?.let(::fetchPodcastData)
     }
 
-    /** Loads [podcastId] when this ViewModel was created without a navigation argument. */
+    /** Loads [podcastId], replacing any previously loaded podcast (the home sheet reuses one instance). */
     fun load(podcastId: String) {
         if (this.podcastId == podcastId) return
         this.podcastId = podcastId
+        podcast.value = null
+        episodes.value = emptyList()
         fetchPodcastData(podcastId)
     }
 
     private fun fetchPodcastData(podcastId: String) {
-        viewModelScope.launch(Dispatchers.IO) {
+        fetchJob?.cancel()
+        fetchJob = viewModelScope.launch(Dispatchers.IO) {
             Timber.d("fetchPodcastData called for: $podcastId")
             _isLoading.value = true
             _error.value = null

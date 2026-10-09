@@ -55,7 +55,7 @@ fun PodcastSheet(
     onDismiss: () -> Unit,
     onOpenPage: () -> Unit,
 ) {
-    val viewModel = hiltViewModel<OnlinePodcastViewModel>(key = "podcast_sheet_$podcastId")
+    val viewModel = hiltViewModel<OnlinePodcastViewModel>(key = "podcast_sheet")
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current
