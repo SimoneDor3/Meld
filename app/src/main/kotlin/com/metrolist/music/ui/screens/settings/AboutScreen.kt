@@ -99,9 +99,15 @@ private data class CommunityLink(
     val url: String
 )
 
+private val pondDeveloper = Contributor(
+    name = "Simone Dore",
+    roleRes = R.string.credits_developer,
+    githubHandle = "SimoneDor3",
+)
+
 private val meldDeveloper = Contributor(
     name = "Francesco Grazioso",
-    roleRes = R.string.credits_developer,
+    roleRes = R.string.credits_meld_developer,
     githubHandle = "FrancescoGrazioso",
 )
 
@@ -121,9 +127,8 @@ private val upstreamCollaborators = listOf(
 )
 
 private val communityLinks = listOf(
-    CommunityLink(R.string.credits_discord, R.drawable.discord, "https://discord.gg/sAErRUVbsK"),
-    CommunityLink(R.string.credits_view_repo, R.drawable.github, "https://github.com/FrancescoGrazioso/Meld"),
-    CommunityLink(R.string.credits_license_name, R.drawable.info, "https://github.com/FrancescoGrazioso/Meld/blob/main/LICENSE")
+    CommunityLink(R.string.credits_view_repo, R.drawable.github, "https://github.com/SimoneDor3/Pond"),
+    CommunityLink(R.string.credits_license_name, R.drawable.info, "https://github.com/SimoneDor3/Pond/blob/main/LICENSE")
 )
 
 private fun handleEasterEggClick(
@@ -400,18 +405,17 @@ fun AboutScreen(
     
             SectionHeader(stringResource(R.string.credits_developer))
     
-            // Meld developer
             ContributorAvatar(
-                avatarUrl = meldDeveloper.avatarUrl,
+                avatarUrl = pondDeveloper.avatarUrl,
                 sizeDp = 180,
                 shape = CircleShape,
-                contentDescription = meldDeveloper.name,
+                contentDescription = pondDeveloper.name,
             )
     
             Spacer(Modifier.height(24.dp))
     
             Text(
-                text = meldDeveloper.name,
+                text = pondDeveloper.name,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -431,7 +435,7 @@ fun AboutScreen(
                         label = stringResource(R.string.credits_github),
                         iconRes = R.drawable.github,
                         iconSize = 24.dp,
-                        onClick = { uriHandler.openUri(meldDeveloper.githubUrl) }
+                        onClick = { uriHandler.openUri(pondDeveloper.githubUrl) }
                     )
                 }
             }
@@ -458,7 +462,7 @@ fun AboutScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 24.dp)
             ) {
-                val allUpstreamContributors = listOf(upstreamLeadDeveloper) + upstreamCollaborators
+                val allUpstreamContributors = listOf(meldDeveloper, upstreamLeadDeveloper) + upstreamCollaborators
                 Column(modifier = Modifier.padding(vertical = 8.dp)) {
                     allUpstreamContributors.forEachIndexed { index, contributor ->
                         var clickCount by remember(contributor.name) { mutableIntStateOf(0) }
