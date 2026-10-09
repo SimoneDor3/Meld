@@ -865,6 +865,7 @@
 
     <!-- Podcasts -->
     <string name="filter_podcasts">Podcasts</string>
+    <string name="filter_music">Music</string>
     <string name="view_podcast">View podcast</string>
     <string name="podcast_channels">Podcast channels</string>
     <string name="latest_episodes">Latest episodes</string>

@@ -137,10 +137,12 @@ import com.metrolist.music.playback.queues.LocalAlbumRadio
 import com.metrolist.music.playback.queues.YouTubeAlbumRadio
 import com.metrolist.music.playback.queues.YouTubeQueue
 import com.metrolist.music.models.SectionType
+import com.metrolist.music.models.SpotifyHomeFilter
 import com.metrolist.music.playback.SpotifyYouTubeMapper
 import com.metrolist.music.playback.queues.SpotifyPlaylistQueue
 import com.metrolist.music.playback.queues.SpotifyQueue
 import com.metrolist.spotify.Spotify
+import com.metrolist.spotify.models.SpotifyHomeFeedItem
 import timber.log.Timber
 import com.metrolist.music.ui.component.YouTubeListItem
 import com.metrolist.music.ui.component.AlbumGridItem
@@ -155,6 +157,7 @@ import com.metrolist.music.ui.component.RandomizeGridItem
 import com.metrolist.music.ui.component.SpotifyAlbumSectionRow
 import com.metrolist.music.ui.component.SpotifyArtistSectionRow
 import com.metrolist.music.ui.component.SpotifyPlaylistSectionRow
+import com.metrolist.music.ui.component.SpotifyShortcutGrid
 import com.metrolist.music.ui.component.SpotifyTrackSectionRow
 import com.metrolist.music.ui.component.resolveSpotifySectionTitle
 import com.metrolist.music.ui.component.shimmer.GridItemPlaceHolder
@@ -699,7 +702,9 @@ fun HomeScreen(
     val savedPodcastShows by viewModel.savedPodcastShows.collectAsStateWithLifecycle()
     val episodesForLater by viewModel.episodesForLater.collectAsStateWithLifecycle()
 
-    val spotifyHomeSections by viewModel.spotifyHomeSections.collectAsStateWithLifecycle()
+    val spotifyHomeSections by viewModel.visibleSpotifyHomeSections.collectAsStateWithLifecycle()
+    val spotifyHomeFilter by viewModel.spotifyHomeFilter.collectAsStateWithLifecycle()
+    val podcastNewEpisodes by viewModel.podcastNewEpisodes.collectAsStateWithLifecycle()
     val isSpotifyHome by viewModel.useSpotifyHome.collectAsStateWithLifecycle()
     val isSpotifyHomeOnly by viewModel.spotifyHomeOnly.collectAsStateWithLifecycle()
     val pinnedSpeedDialIds by viewModel.pinnedSpeedDialIds.collectAsStateWithLifecycle()
@@ -1240,13 +1245,29 @@ fun HomeScreen(
                 contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
             ) {
                 item {
-                    ChipsRow(
-                        chips = homePage?.chips?.map { it to it.title } ?: emptyList(),
-                        currentValue = selectedChip,
-                        onValueUpdate = {
-                            viewModel.toggleChip(it)
-                        },
-                    )
+                    if (isSpotifyHome && spotifyHomeSections != null) {
+                        // Podcast chips only make sense once the YouTube Music library has podcasts;
+                        // stay visible while a filter is applied so it can always be cleared.
+                        if (spotifyHomeFilter != SpotifyHomeFilter.ALL || podcastNewEpisodes.isNotEmpty() || savedPodcastShows.isNotEmpty()) {
+                            ChipsRow(
+                                chips = listOf(
+                                    SpotifyHomeFilter.ALL to stringResource(R.string.filter_all),
+                                    SpotifyHomeFilter.MUSIC to stringResource(R.string.filter_music),
+                                    SpotifyHomeFilter.PODCASTS to stringResource(R.string.filter_podcasts),
+                                ),
+                                currentValue = spotifyHomeFilter,
+                                onValueUpdate = { viewModel.spotifyHomeFilter.value = it },
+                            )
+                        }
+                    } else {
+                        ChipsRow(
+                            chips = homePage?.chips?.map { it to it.title } ?: emptyList(),
+                            currentValue = selectedChip,
+                            onValueUpdate = {
+                                viewModel.toggleChip(it)
+                            },
+                        )
+                    }
                 }
 
                 if (isLoading && homePage?.chips.isNullOrEmpty()) {
@@ -2616,15 +2637,34 @@ fun HomeScreen(
 
                 // Spotify Home Sections (shown when Spotify home is active)
                 if (isSpotifyHome && spotifyHomeSections != null) {
+                    val openSpotifyArtist: (String) -> Unit = { name ->
+                        scope.launch(Dispatchers.IO) {
+                            val ytResult = YouTube.search(
+                                name,
+                                YouTube.SearchFilter.FILTER_ARTIST,
+                            ).getOrNull()
+                            val ytArtist = ytResult?.items
+                                ?.firstOrNull { it is ArtistItem }
+                            if (ytArtist != null) {
+                                withContext(Dispatchers.Main) {
+                                    navController.navigate("artist/${ytArtist.id}")
+                                }
+                            }
+                        }
+                    }
                     spotifyHomeSections?.forEachIndexed { index, section ->
-                        item(key = "spotify_section_title_$index") {
-                            NavigationTitle(
-                                title = resolveSpotifySectionTitle(section),
-                                onClick = if (section.title == "spotify_new_releases") {
-                                    { navController.navigate("new_release") }
-                                } else null,
-                                modifier = Modifier.animateItem()
-                            )
+                        if (section.title.isNotEmpty()) {
+                            item(key = "spotify_section_title_$index") {
+                                NavigationTitle(
+                                    title = resolveSpotifySectionTitle(section),
+                                    onClick = when (section.title) {
+                                        "spotify_new_releases" -> { { navController.navigate("new_release") } }
+                                        "your_shows" -> { { navController.navigate("youtube_browse/FEmusic_library_non_music_audio_list") } }
+                                        else -> null
+                                    },
+                                    modifier = Modifier.animateItem()
+                                )
+                            }
                         }
 
                         item(key = "spotify_section_content_$index") {
@@ -2652,21 +2692,7 @@ fun HomeScreen(
                                 SectionType.ARTISTS -> {
                                     SpotifyArtistSectionRow(
                                         artists = section.artists,
-                                        onArtistClick = { artist ->
-                                            scope.launch(Dispatchers.IO) {
-                                                val ytResult = YouTube.search(
-                                                    artist.name,
-                                                    YouTube.SearchFilter.FILTER_ARTIST,
-                                                ).getOrNull()
-                                                val ytArtist = ytResult?.items
-                                                    ?.firstOrNull { it is ArtistItem }
-                                                if (ytArtist != null) {
-                                                    withContext(Dispatchers.Main) {
-                                                        navController.navigate("artist/${ytArtist.id}")
-                                                    }
-                                                }
-                                            }
-                                        },
+                                        onArtistClick = { artist -> openSpotifyArtist(artist.name) },
                                         modifier = Modifier.animateItem(),
                                     )
                                 }
@@ -2725,6 +2751,43 @@ fun HomeScreen(
                                         },
                                         modifier = Modifier.animateItem(),
                                     )
+                                }
+                                SectionType.SHORTCUTS -> {
+                                    SpotifyShortcutGrid(
+                                        section = section,
+                                        onShortcutClick = { item ->
+                                            when (item) {
+                                                is SpotifyHomeFeedItem.Playlist -> navController.navigate("spotify_playlist/${item.id}")
+                                                is SpotifyHomeFeedItem.Album -> navController.navigate("spotify_album/${item.id}")
+                                                is SpotifyHomeFeedItem.Artist -> openSpotifyArtist(item.name)
+                                            }
+                                        },
+                                        onEpisodeClick = { episode ->
+                                            playerConnection.playQueue(
+                                                ListQueue(
+                                                    title = episode.artists.firstOrNull()?.name,
+                                                    items = listOf(episode.toMediaMetadata().toMediaItem()),
+                                                ),
+                                            )
+                                        },
+                                        onEpisodeLongClick = { episode ->
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            menuState.show { YouTubeSongMenu(episode, menuState::dismiss) }
+                                        },
+                                        modifier = Modifier.animateItem(),
+                                    )
+                                }
+                                SectionType.SHOWS -> {
+                                    LazyRow(
+                                        contentPadding = WindowInsets.systemBars
+                                            .only(WindowInsetsSides.Horizontal)
+                                            .asPaddingValues(),
+                                        modifier = Modifier.animateItem(),
+                                    ) {
+                                        items(section.shows, key = { "spotify_home_show_${it.id}" }) { show ->
+                                            ytGridItem(show)
+                                        }
+                                    }
                                 }
                             }
                         }
