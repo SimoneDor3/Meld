@@ -170,6 +170,7 @@ import com.metrolist.music.ui.component.YouTubeGridItem
 import com.metrolist.music.ui.menu.AlbumMenu
 import com.metrolist.music.ui.menu.ArtistMenu
 import com.metrolist.music.ui.menu.SongMenu
+import com.metrolist.music.ui.screens.podcast.PodcastSheet
 import com.metrolist.music.ui.menu.YouTubeAlbumMenu
 import com.metrolist.music.ui.menu.YouTubeArtistMenu
 import com.metrolist.music.ui.menu.YouTubePlaylistMenu
@@ -823,6 +824,7 @@ fun HomeScreen(
         ?.getStateFlow("wrapped_seen", false)
         ?.collectAsStateWithLifecycle() ?: remember { mutableStateOf(false) }
 
+    var podcastSheetId by rememberSaveable { mutableStateOf<String?>(null) }
     var randomSeed by rememberSaveable { mutableLongStateOf(System.currentTimeMillis()) }
 
     LaunchedEffect(isRefreshing) {
@@ -2763,7 +2765,7 @@ fun HomeScreen(
                                         },
                                         onPodcastClick = { podcast ->
                                             if (podcast.id != null) {
-                                                navController.navigate("online_podcast/${podcast.id}")
+                                                podcastSheetId = podcast.id
                                             } else {
                                                 val episode = podcast.latestEpisode.song
                                                 playerConnection.playQueue(
@@ -2924,6 +2926,17 @@ fun HomeScreen(
                 },
                 showRecognition = showRecognizeButton,
                 showMainAction = showPlayRandomButton,
+            )
+        }
+
+        podcastSheetId?.let { id ->
+            PodcastSheet(
+                podcastId = id,
+                onDismiss = { podcastSheetId = null },
+                onOpenPage = {
+                    podcastSheetId = null
+                    navController.navigate("online_podcast/$id")
+                },
             )
         }
     }

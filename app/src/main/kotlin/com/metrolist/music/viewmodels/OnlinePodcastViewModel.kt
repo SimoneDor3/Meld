@@ -31,7 +31,7 @@ class OnlinePodcastViewModel @Inject constructor(
     val database: MusicDatabase,
     private val syncUtils: SyncUtils,
 ) : ViewModel() {
-    private val podcastId = savedStateHandle.get<String>("podcastId")!!
+    private var podcastId: String? = savedStateHandle.get<String>("podcastId")
 
     val podcast = MutableStateFlow<PodcastItem?>(null)
     val episodes = MutableStateFlow<List<EpisodeItem>>(emptyList())
@@ -48,10 +48,17 @@ class OnlinePodcastViewModel @Inject constructor(
 
     init {
         Timber.d("ViewModel init with podcastId: $podcastId")
-        fetchPodcastData()
+        podcastId?.let(::fetchPodcastData)
     }
 
-    private fun fetchPodcastData() {
+    /** Loads [podcastId] when this ViewModel was created without a navigation argument. */
+    fun load(podcastId: String) {
+        if (this.podcastId == podcastId) return
+        this.podcastId = podcastId
+        fetchPodcastData(podcastId)
+    }
+
+    private fun fetchPodcastData(podcastId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             Timber.d("fetchPodcastData called for: $podcastId")
             _isLoading.value = true
@@ -119,6 +126,6 @@ class OnlinePodcastViewModel @Inject constructor(
     fun toggleLibrary() = toggleSubscription()
 
     fun retry() {
-        fetchPodcastData()
+        podcastId?.let(::fetchPodcastData)
     }
 }
