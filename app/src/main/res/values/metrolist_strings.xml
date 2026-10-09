@@ -1192,6 +1192,7 @@
     <string name="discord_button_url_description">Destination link opened when someone clicks the button. Must start with http:// or https://. Supports {song_name}, {artist_name}, {album_name}.</string>
     <string name="credits_developer">Developer</string>
     <string name="credits_original_project">Original Project</string>
+    <string name="credits_meld_developer">Meld developer</string>
     <string name="credits_based_on_metrolist">Pond is a fork of Meld by Francesco Grazioso, which is based on Metrolist, an open-source YouTube Music client.</string>
     <string name="filter_local_files">Local files</string>
     <string name="local_files">Local files</string>
