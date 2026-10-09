@@ -205,6 +205,7 @@ class SpotifyHomeBuildTest {
         )
 
         val home = buildSpotifyHome(listOf(spotifyGrid) + spotifyMusic, episodes, listOf(show), local, SpotifyHomeFilter.ALL)
+            .drop(1)
 
         val grid = home.first()
         assertEquals(SectionType.SHORTCUTS, grid.type)
@@ -213,8 +214,8 @@ class SpotifyHomeBuildTest {
         assertEquals(listOf("half", "half-older"), grid.podcasts.first().episodes.map { it.song.id })
         assertEquals(0.5f, grid.podcasts.first().progress!!, 0.001f)
         assertEquals(4, grid.shortcuts.size)
-        assertEquals(SectionType.SHOWS, home[5].type)
-        assertEquals(1 + spotifyMusic.size + 1, home.size)
+        assertEquals(listOf(SectionType.SHORTCUTS, SectionType.SHOWS), home.take(2).map { it.type })
+        assertEquals(1 + 1 + spotifyMusic.size, home.size)
     }
 
     @Test
@@ -233,7 +234,92 @@ class SpotifyHomeBuildTest {
     fun `without YouTube podcasts the all view equals today's Spotify home`() {
         val sections = listOf(spotifyGrid) + spotifyMusic
         val home = buildSpotifyHome(sections, emptyList(), emptyList(), emptyMap(), SpotifyHomeFilter.ALL)
-        assertEquals(6, home.first().shortcuts.size)
-        assertEquals(sections.drop(1), home.drop(1))
+        assertEquals(SectionType.SPEED_DIAL, home[0].type)
+        assertEquals(6, home[1].shortcuts.size)
+        assertEquals(sections.drop(1), home.drop(2))
+    }
+
+    private val newReleases = SpotifyHomeSection(title = "spotify_new_releases", type = SectionType.ALBUMS)
+    private val topTracks = SpotifyHomeSection(title = "spotify_top_tracks", type = SectionType.TRACKS)
+
+    // Mirrors HomeViewModel: top tracks and new releases first, then Spotify's feed.
+    private val loadedSections = listOf(topTracks, newReleases, spotifyGrid) + spotifyMusic.take(3)
+
+    private fun layout(vararg sections: HomeSectionId, hidden: Set<HomeSectionId> = emptySet()) =
+        sections.map { HomeSectionSetting(it, it !in hidden) }
+
+    private fun home(filter: SpotifyHomeFilter, layout: List<HomeSectionSetting>) =
+        buildSpotifyHome(loadedSections, listOf(episode("a")), listOf(show), emptyMap(), filter, layout)
+            .map { if (it.type == SectionType.SHORTCUTS) "grid" else it.title.ifEmpty { it.type.name } }
+
+    private val customLayout = layout(
+        HomeSectionId.SPOTIFY_FEED,
+        HomeSectionId.YOUR_SHOWS,
+        HomeSectionId.SHORTCUTS,
+        HomeSectionId.SPEED_DIAL,
+        HomeSectionId.NEW_RELEASES,
+    )
+
+    @Test
+    fun `default layout - speed dial, grid, new releases, shows, then the feed in Spotify order`() {
+        assertEquals(
+            listOf("SPEED_DIAL", "grid", "spotify_new_releases", "your_shows", "spotify_top_tracks", "Music 1", "Music 2", "Music 3"),
+            home(SpotifyHomeFilter.ALL, DefaultHomeLayout),
+        )
+    }
+
+    @Test
+    fun `layout order is respected and the feed stays together`() {
+        assertEquals(
+            listOf("spotify_top_tracks", "Music 1", "Music 2", "Music 3", "your_shows", "grid", "SPEED_DIAL", "spotify_new_releases"),
+            home(SpotifyHomeFilter.ALL, customLayout),
+        )
+    }
+
+    @Test
+    fun `hidden sections are dropped`() {
+        val hidden = customLayout.map {
+            it.copy(visible = it.section !in setOf(HomeSectionId.SPOTIFY_FEED, HomeSectionId.SPEED_DIAL))
+        }
+        assertEquals(listOf("your_shows", "grid", "spotify_new_releases"), home(SpotifyHomeFilter.ALL, hidden))
+    }
+
+    @Test
+    fun `filters keep the layout order without the other kind of content or the speed dial`() {
+        assertEquals(
+            listOf("spotify_top_tracks", "Music 1", "Music 2", "Music 3", "grid", "spotify_new_releases"),
+            home(SpotifyHomeFilter.MUSIC, customLayout),
+        )
+        assertEquals(listOf("your_shows", "grid"), home(SpotifyHomeFilter.PODCASTS, customLayout))
+
+        val showsHidden = customLayout.map { it.copy(visible = it.section != HomeSectionId.YOUR_SHOWS) }
+        assertEquals(listOf("grid"), home(SpotifyHomeFilter.PODCASTS, showsHidden))
+    }
+
+    @Test
+    fun `layout survives a round trip`() {
+        val saved = customLayout.map { it.copy(visible = it.section != HomeSectionId.NEW_RELEASES) }
+        assertEquals(saved, deserializeHomeLayout(serializeHomeLayout(saved)))
+    }
+
+    @Test
+    fun `missing sections are appended visible, unknown and duplicate ones dropped`() {
+        assertEquals(
+            listOf(
+                HomeSectionSetting(HomeSectionId.SPOTIFY_FEED, visible = false),
+                HomeSectionSetting(HomeSectionId.SPEED_DIAL, visible = true),
+                HomeSectionSetting(HomeSectionId.SHORTCUTS, visible = true),
+                HomeSectionSetting(HomeSectionId.NEW_RELEASES, visible = true),
+                HomeSectionSetting(HomeSectionId.YOUR_SHOWS, visible = true),
+            ),
+            deserializeHomeLayout("spotify_feed:false,recently_played:true,spotify_feed:true"),
+        )
+    }
+
+    @Test
+    fun `missing or garbage layout falls back to the default`() {
+        assertEquals(DefaultHomeLayout, deserializeHomeLayout(null))
+        assertEquals(DefaultHomeLayout, deserializeHomeLayout(""))
+        assertEquals(DefaultHomeLayout, deserializeHomeLayout("not a layout,::,speed_dial"))
     }
 }
