@@ -2571,7 +2571,7 @@ object YouTube {
                             ?: renderer.secondarySubtitle?.runs.podcastAlbum()
                             ?: renderer.subtitle?.runs.podcastAlbum()
                             ?: browseId?.takeIf { it.startsWith("MPSP") }?.let { id ->
-                                (podcastName ?: artistName)?.takeIf { it.isNotBlank() }?.let { Album(name = it, id = id) }
+                                artistName?.takeIf { it.isNotBlank() }?.let { Album(name = it, id = id) }
                             }
 
                         episodesList.add(
