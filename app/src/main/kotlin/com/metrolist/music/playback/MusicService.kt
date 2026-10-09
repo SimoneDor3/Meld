@@ -2840,7 +2840,8 @@ class MusicService :
     ) {
         val session = episodeWatchtime ?: return
         episodeWatchtime = null
-        val lengthMs = if (positionMs != null) durationOrZero() else 0L
+        // After a transition the player already reports the next item's duration; 0 falls back to the session's known length.
+        val lengthMs = if (positionMs != null && player.currentMediaItem?.mediaId == session.mediaId) durationOrZero() else 0L
         sendWatchtime(
             session,
             session.finalPing(positionMs ?: session.lastPositionMs, lengthMs, SystemClock.elapsedRealtime(), ended),
@@ -5331,7 +5332,10 @@ class MusicService :
             val ping = session.finalPing(player.currentPosition, durationOrZero(), SystemClock.elapsedRealtime())
             // The service scope is cancelled below, so this last ping can't be queued on it.
             runBlocking(Dispatchers.IO) {
-                withTimeoutOrNull(2.seconds) { reportWatchtime(session, ping) }
+                withTimeoutOrNull(2.seconds) {
+                    watchtimeSendJob?.join()
+                    reportWatchtime(session, ping)
+                }
             }
         }
 
