@@ -1091,6 +1091,12 @@ fun ContentSettings(
                     onClick = { onRandomizeHomeOrderChange(!randomizeHomeOrder) }
                 ),
                 Material3SettingsItem(
+                    icon = painterResource(R.drawable.home_outlined),
+                    title = { Text(stringResource(R.string.home_sections)) },
+                    description = { Text(stringResource(R.string.home_sections_desc)) },
+                    onClick = { navController.navigate("settings/home_sections") }
+                ),
+                Material3SettingsItem(
                     icon = painterResource(R.drawable.trending_up),
                     title = { Text(stringResource(R.string.top_length)) },
                     description = { Text(lengthTop) },

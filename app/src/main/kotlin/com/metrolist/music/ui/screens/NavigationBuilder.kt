@@ -52,6 +52,7 @@ import com.metrolist.music.ui.screens.settings.AndroidAutoSettings
 import com.metrolist.music.ui.screens.settings.AppearanceSettings
 import com.metrolist.music.ui.screens.settings.BackupAndRestore
 import com.metrolist.music.ui.screens.settings.ContentSettings
+import com.metrolist.music.ui.screens.settings.HomeSectionsSettings
 import com.metrolist.music.ui.screens.settings.DarkMode
 import com.metrolist.music.ui.screens.settings.PlayerSettings
 import com.metrolist.music.ui.screens.settings.SponsorBlockSettings
@@ -532,5 +533,8 @@ fun NavGraphBuilder.navigationBuilder(
     }
     composable("settings/android_auto") {
         AndroidAutoSettings(navController)
+    }
+    composable("settings/home_sections") {
+        HomeSectionsSettings(navController)
     }
 }
