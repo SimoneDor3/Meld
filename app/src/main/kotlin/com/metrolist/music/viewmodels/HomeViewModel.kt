@@ -63,7 +63,6 @@ import com.metrolist.music.utils.SyncUtils
 import com.metrolist.music.utils.dataStore
 import com.metrolist.music.utils.safeDataStoreEdit
 import com.metrolist.music.utils.get
-import com.metrolist.music.playback.SpotifyProfileCache
 import com.metrolist.music.utils.reportException
 import com.metrolist.spotify.Spotify
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -671,27 +670,13 @@ class HomeViewModel @Inject constructor(
         val sections = mutableListOf<SpotifyHomeSection>()
 
         try {
-            // These three sources are independent — fetch them concurrently and then
+            // These two sources are independent — fetch them concurrently and then
             // assemble the sections in a fixed display order. Previously they ran
             // strictly sequentially (~1-2.7s of chained round-trips).
-            val (profileTracks, newReleasesResult, homeResult) = coroutineScope {
-                val topTracksDeferred = async { SpotifyProfileCache.getTopTracks(context, database, limit = 20) }
+            val (newReleasesResult, homeResult) = coroutineScope {
                 val newReleasesDeferred = async { Spotify.newReleases(limit = 20) }
                 val homeDeferred = async { Spotify.home(sectionItemsLimit = 10) }
-                Triple(topTracksDeferred.await(), newReleasesDeferred.await(), homeDeferred.await())
-            }
-
-            Timber.d("spotifyHome: top tracks from profile cache = ${profileTracks.size}")
-            val topTracks = if (hideExplicit) profileTracks.filter { !it.explicit } else profileTracks
-            if (topTracks.isNotEmpty()) {
-                sections.add(SpotifyHomeSection(
-                    title = "spotify_top_tracks",
-                    type = SectionType.TRACKS,
-                    tracks = topTracks,
-                ))
-                Timber.d("spotifyHome: added pinned section 'Your Top Tracks' (${topTracks.size} tracks)")
-            } else {
-                Timber.w("spotifyHome: no top tracks — skipping pinned section")
+                newReleasesDeferred.await() to homeDeferred.await()
             }
 
             newReleasesResult.onSuccess { newReleases ->
