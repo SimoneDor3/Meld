@@ -1,6 +1,7 @@
 package com.metrolist.innertube
 
 import com.metrolist.innertube.models.AccountInfo
+import com.metrolist.innertube.models.Album
 import com.metrolist.innertube.models.AlbumItem
 import com.metrolist.innertube.models.Artist
 import com.metrolist.innertube.models.ArtistItem
@@ -2402,6 +2403,12 @@ object YouTube {
             libraryPage.items.filterIsInstance<PodcastItem>()
         }
 
+    private fun List<Run>?.podcastAlbum(): Album? =
+        this?.firstNotNullOfOrNull { run ->
+            val id = run.navigationEndpoint?.browseEndpoint?.browseId
+            if (id != null && id.startsWith("MPSP")) Album(name = run.text, id = id) else null
+        }
+
     /**
      * Fetch "New Episodes" auto-playlist (VLRDPN).
      * Returns new episodes from saved/subscribed podcasts.
@@ -2561,12 +2568,19 @@ object YouTube {
                             listOf(Artist(name = artistName, id = browseId))
                         } else emptyList()
 
+                        val podcast = renderer.secondSubtitle?.runs.podcastAlbum()
+                            ?: renderer.secondarySubtitle?.runs.podcastAlbum()
+                            ?: renderer.subtitle?.runs.podcastAlbum()
+                            ?: browseId?.takeIf { it.startsWith("MPSP") }?.let { id ->
+                                artistName?.takeIf { it.isNotBlank() }?.let { Album(name = it, id = id) }
+                            }
+
                         episodesList.add(
                             SongItem(
                                 id = renderer.onTap.watchEndpoint.videoId,
                                 title = title,
                                 artists = artists,
-                                album = null,
+                                album = podcast,
                                 duration = duration,
                                 thumbnail = renderer.thumbnail?.getThumbnailUrl() ?: "",
                                 isEpisode = true,
@@ -2609,12 +2623,16 @@ object YouTube {
                                 listOf(Artist(name = artistName, id = null))
                             } else emptyList()
 
+                            val podcast = renderer.secondSubtitle?.runs.podcastAlbum()
+                                ?: renderer.secondarySubtitle?.runs.podcastAlbum()
+                                ?: renderer.subtitle?.runs.podcastAlbum()
+
                             episodesList.add(
                                 SongItem(
                                     id = renderer.onTap.watchEndpoint.videoId,
                                     title = title,
                                     artists = artists,
-                                    album = null,
+                                    album = podcast,
                                     duration = duration,
                                     thumbnail = renderer.thumbnail?.getThumbnailUrl() ?: "",
                                     isEpisode = true,

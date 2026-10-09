@@ -18,7 +18,7 @@ import com.metrolist.spotify.models.SpotifyTrack
  * Represents a section in the Spotify-powered home screen.
  * Each section has a title and contains one type of content, except the untitled
  * [SectionType.SHORTCUTS] grid, which mixes Spotify music [shortcuts] with
- * YouTube Music podcast [episodes].
+ * YouTube Music [podcasts].
  */
 data class SpotifyHomeSection(
     val title: String,
@@ -28,7 +28,7 @@ data class SpotifyHomeSection(
     val albums: List<SpotifyAlbum> = emptyList(),
     val playlists: List<SpotifyPlaylist> = emptyList(),
     val shortcuts: List<SpotifyHomeFeedItem> = emptyList(),
-    val episodes: List<HomeEpisode> = emptyList(),
+    val podcasts: List<HomePodcast> = emptyList(),
     val shows: List<PodcastItem> = emptyList(),
 )
 
@@ -48,6 +48,18 @@ data class HomeEpisode(
     val isNew: Boolean,
 )
 
+/** A podcast show on the home grid, built from its recent [episodes] (newest first). */
+data class HomePodcast(
+    val id: String?,
+    val title: String,
+    val thumbnail: String?,
+    val episodes: List<HomeEpisode>,
+) {
+    val hasNew: Boolean get() = episodes.any { it.isNew }
+    val progress: Float? get() = episodes.firstNotNullOfOrNull { it.progress }
+    val latestEpisode: HomeEpisode get() = episodes.first()
+}
+
 enum class SpotifyHomeFilter {
     ALL,
     MUSIC,
@@ -55,7 +67,7 @@ enum class SpotifyHomeFilter {
 }
 
 private const val ALL_GRID_SIZE = 8
-private const val ALL_GRID_MAX_EPISODES = 4
+private const val ALL_GRID_MAX_PODCASTS = 4
 
 // Roughly where Spotify places "Your shows": after the first few music sections.
 private const val ALL_SHOWS_POSITION = 4
@@ -72,34 +84,66 @@ fun buildSpotifyHome(
     localPlayback: Map<String, SongEntity>,
     filter: SpotifyHomeFilter,
 ): List<SpotifyHomeSection> {
-    // In progress first, then unplayed, then finished; newest first within each (feed order).
     val episodes = newEpisodes
         .distinctBy { it.id }
         .map { it.toHomeEpisode(localPlayback[it.id]) }
-        .sortedBy { if (it.progress != null) 0 else if (it.isNew) 1 else 2 }
+    // In progress first, then with a new episode, then the rest; feed order within each.
+    val podcasts = episodes.groupIntoPodcasts(shows)
+        .sortedBy { if (it.progress != null) 0 else if (it.hasNew) 1 else 2 }
     val showsSection = shows.takeIf { it.isNotEmpty() }
         ?.let { SpotifyHomeSection(title = "your_shows", type = SectionType.SHOWS, shows = it.distinctBy { show -> show.id }) }
 
     return when (filter) {
         SpotifyHomeFilter.MUSIC -> spotifySections
         SpotifyHomeFilter.PODCASTS -> listOfNotNull(
-            episodes.takeIf { it.isNotEmpty() }
-                ?.let { SpotifyHomeSection(title = "", type = SectionType.SHORTCUTS, episodes = it) },
+            podcasts.takeIf { it.isNotEmpty() }
+                ?.let { SpotifyHomeSection(title = "", type = SectionType.SHORTCUTS, podcasts = it) },
             showsSection,
         )
         SpotifyHomeFilter.ALL -> {
-            val gridEpisodes = episodes.filter { it.progress != null || it.isNew }.take(ALL_GRID_MAX_EPISODES)
+            val gridPodcasts = podcasts.filter { it.progress != null || it.hasNew }.take(ALL_GRID_MAX_PODCASTS)
             val musicShortcuts = spotifySections.firstOrNull { it.type == SectionType.SHORTCUTS }?.shortcuts.orEmpty()
             val grid = SpotifyHomeSection(
                 title = "",
                 type = SectionType.SHORTCUTS,
-                shortcuts = musicShortcuts.take(ALL_GRID_SIZE - gridEpisodes.size),
-                episodes = gridEpisodes,
+                shortcuts = musicShortcuts.take(ALL_GRID_SIZE - gridPodcasts.size),
+                podcasts = gridPodcasts,
             )
             val rest = spotifySections.filter { it.type != SectionType.SHORTCUTS }.toMutableList()
             showsSection?.let { rest.add(minOf(ALL_SHOWS_POSITION, rest.size), it) }
-            listOfNotNull(grid.takeIf { it.shortcuts.isNotEmpty() || it.episodes.isNotEmpty() }) + rest
+            listOfNotNull(grid.takeIf { it.shortcuts.isNotEmpty() || it.podcasts.isNotEmpty() }) + rest
         }
+    }
+}
+
+/**
+ * Groups episodes by show: by the episode's show ID when YouTube provides it, else by
+ * matching its show or author name against the followed [shows], else by that name alone.
+ */
+private fun List<HomeEpisode>.groupIntoPodcasts(shows: List<PodcastItem>): List<HomePodcast> {
+    fun String.normalized() = trim().lowercase()
+    val showsById = shows.associateBy { it.id }
+    // Titles take precedence over author names when both could match.
+    val showsByName = (shows.map { it.title to it } + shows.mapNotNull { show -> show.author?.name?.let { it to show } })
+        .reversed()
+        .associate { (name, show) -> name.normalized() to show }
+
+    // Key: (show ID, null) when known, else (null, normalized show name).
+    return groupBy { episode ->
+        val song = episode.song
+        val names = listOfNotNull(song.album?.name, song.artists.firstOrNull()?.name)
+        val id = song.album?.id?.takeIf { it.isNotBlank() }
+            ?: names.firstNotNullOfOrNull { showsByName[it.normalized()]?.id }
+        if (id != null) id to null else null to (names.firstOrNull() ?: song.title).normalized()
+    }.map { (key, podcastEpisodes) ->
+        val show = key.first?.let(showsById::get)
+        val first = podcastEpisodes.first().song
+        HomePodcast(
+            id = key.first,
+            title = show?.title ?: first.album?.name ?: first.artists.firstOrNull()?.name ?: first.title,
+            thumbnail = show?.thumbnail ?: first.thumbnail,
+            episodes = podcastEpisodes,
+        )
     }
 }
 

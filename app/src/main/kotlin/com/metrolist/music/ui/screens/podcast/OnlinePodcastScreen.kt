@@ -2,7 +2,6 @@ package com.metrolist.music.ui.screens.podcast
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -69,7 +68,6 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import com.metrolist.music.ui.utils.resize
 import com.metrolist.innertube.models.PodcastItem
-import timber.log.Timber
 import com.metrolist.music.LocalDatabase
 import com.metrolist.music.LocalPlayerAwareWindowInsets
 import com.metrolist.music.db.entities.PodcastEntity
@@ -80,7 +78,7 @@ import com.metrolist.music.extensions.toMediaItem
 import com.metrolist.music.playback.queues.ListQueue
 import com.metrolist.music.ui.component.IconButton
 import com.metrolist.music.ui.component.LocalMenuState
-import com.metrolist.music.ui.component.YouTubeListItem
+import com.metrolist.music.ui.component.PodcastEpisodeItem
 import com.metrolist.music.ui.menu.YouTubeSongMenu
 import com.metrolist.music.ui.utils.backToMain
 import com.metrolist.music.viewmodels.OnlinePodcastViewModel
@@ -189,45 +187,30 @@ fun OnlinePodcastScreen(
                         items = filteredEpisodes,
                         key = { _, episode -> episode.id }
                     ) { index, episode ->
-                        YouTubeListItem(
-                            item = episode,
+                        PodcastEpisodeItem(
+                            episode = episode,
                             isActive = mediaMetadata?.id == episode.id,
                             isPlaying = isPlaying,
-                            modifier = Modifier
-                                .combinedClickable(
-                                    onClick = {
-                                        if (episode.id == mediaMetadata?.id) {
-                                            playerConnection.togglePlayPause()
-                                        } else {
-                                            Timber.d("Playing episode: ${episode.title}, index: $index, total episodes: ${filteredEpisodes.size}")
-                                            val mediaItems = filteredEpisodes.map { it.toMediaMetadata().toMediaItem() }
-                                            Timber.d("Created ${mediaItems.size} media items for queue")
-                                            playerConnection.playQueue(
-                                                ListQueue(
-                                                    title = podcast?.title,
-                                                    items = mediaItems,
-                                                    startIndex = index
-                                                )
-                                            )
-                                        }
-                                    },
-                                    onLongClick = {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        menuState.show {
-                                            YouTubeSongMenu(episode.asSongItem(), menuState::dismiss)
-                                        }
-                                    }
-                                )
-                                .animateItem(),
-                            trailingContent = {
-                                IconButton(onClick = {
-                                    menuState.show {
-                                        YouTubeSongMenu(episode.asSongItem(), menuState::dismiss)
-                                    }
-                                }) {
-                                    Icon(painterResource(R.drawable.more_vert), null)
+                            onClick = {
+                                if (episode.id == mediaMetadata?.id) {
+                                    playerConnection.togglePlayPause()
+                                } else {
+                                    playerConnection.playQueue(
+                                        ListQueue(
+                                            title = podcast?.title,
+                                            items = filteredEpisodes.map { it.toMediaMetadata().toMediaItem() },
+                                            startIndex = index
+                                        )
+                                    )
                                 }
-                            }
+                            },
+                            onLongClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                menuState.show {
+                                    YouTubeSongMenu(episode.asSongItem(), menuState::dismiss)
+                                }
+                            },
+                            modifier = Modifier.animateItem(),
                         )
                     }
                 }
