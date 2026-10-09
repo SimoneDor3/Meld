@@ -32,6 +32,7 @@ import com.metrolist.music.constants.HideYoutubeShortsKey
 import com.metrolist.music.constants.InnerTubeCookieKey
 import com.metrolist.music.constants.QuickPicks
 import com.metrolist.music.constants.QuickPicksKey
+import com.metrolist.music.constants.ShowPodcastSuggestionsKey
 import com.metrolist.music.constants.ShowWrappedCardKey
 import com.metrolist.music.constants.SpotifyAccessTokenKey
 import com.metrolist.music.utils.SpotifyTokenManager
@@ -281,6 +282,10 @@ class HomeViewModel @Inject constructor(
     val podcastNewEpisodes = MutableStateFlow<List<SongItem>>(emptyList())
     val spotifyHomeFilter = MutableStateFlow(SpotifyHomeFilter.ALL)
 
+    val showPodcastSuggestions: StateFlow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ShowPodcastSuggestionsKey] ?: true
+    }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Lazily, true)
+
     // What the Spotify home actually shows: Spotify music + YouTube Music podcasts for the
     // selected chip, with episode state re-emitted whenever MusicService saves a position.
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -289,12 +294,20 @@ class HomeViewModel @Inject constructor(
             spotifyHomeSections,
             podcastNewEpisodes,
             savedPodcastShows,
-            spotifyHomeFilter,
+            combine(spotifyHomeFilter, showPodcastSuggestions, ::Pair),
             podcastNewEpisodes.flatMapLatest { episodes ->
                 if (episodes.isEmpty()) flowOf(emptyList()) else database.songEntitiesByIds(episodes.map { it.id })
             },
-        ) { sections, episodes, shows, filter, localPlayback ->
-            sections?.let { buildSpotifyHome(it, episodes, shows, localPlayback.associateBy { song -> song.id }, filter) }
+        ) { sections, episodes, shows, (filter, showPodcasts), localPlayback ->
+            sections?.let {
+                buildSpotifyHome(
+                    it,
+                    if (showPodcasts) episodes else emptyList(),
+                    if (showPodcasts) shows else emptyList(),
+                    localPlayback.associateBy { song -> song.id },
+                    if (showPodcasts) filter else SpotifyHomeFilter.ALL,
+                )
+            }
         }.stateIn(viewModelScope, SharingStarted.Lazily, null)
     val useSpotifyHome: StateFlow<Boolean> = context.dataStore.data.map { prefs ->
         val enabled = prefs[EnableSpotifyKey] ?: false
@@ -686,7 +699,9 @@ class HomeViewModel @Inject constructor(
 
         // Podcasts come from the user's YouTube Music library; Spotify provides music only.
         // Launched outside the scope below so the YouTube calls don't hold up the Spotify sections.
-        viewModelScope.launch(Dispatchers.IO) { loadYouTubePodcasts() }
+        if (context.dataStore.get(ShowPodcastSuggestionsKey, true)) {
+            viewModelScope.launch(Dispatchers.IO) { loadYouTubePodcasts() }
+        }
 
         try {
             // These two sources are independent — fetch them concurrently and then
@@ -990,6 +1005,19 @@ class HomeViewModel @Inject constructor(
     }
 
     init {
+        var podcastSuggestionsWasOff = false
+        viewModelScope.launch(Dispatchers.IO) {
+            showPodcastSuggestions.collect { enabled ->
+                if (!enabled) {
+                    podcastSuggestionsWasOff = true
+                    spotifyHomeFilter.value = SpotifyHomeFilter.ALL
+                } else if (podcastSuggestionsWasOff) {
+                    podcastSuggestionsWasOff = false
+                    if (useSpotifyHome.value && podcastNewEpisodes.value.isEmpty()) loadYouTubePodcasts()
+                }
+            }
+        }
+
         // Run sync in separate coroutine with cooldown to avoid blocking UI
         viewModelScope.launch(Dispatchers.IO) {
             syncUtils.tryAutoSync()
