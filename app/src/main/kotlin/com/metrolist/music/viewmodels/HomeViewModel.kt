@@ -27,6 +27,7 @@ import com.metrolist.innertube.utils.completed
 import com.metrolist.music.constants.EnableSpotifyKey
 import com.metrolist.music.constants.SpotifyHomeOnlyKey
 import com.metrolist.music.constants.HideExplicitKey
+import com.metrolist.music.constants.HomeSectionsOrderKey
 import com.metrolist.music.constants.HideVideoSongsKey
 import com.metrolist.music.constants.HideYoutubeShortsKey
 import com.metrolist.music.constants.InnerTubeCookieKey
@@ -53,11 +54,14 @@ import com.metrolist.spotify.models.SpotifyPlaylistOwner
 import com.metrolist.spotify.models.SpotifyPlaylistTracksRef
 import com.metrolist.music.extensions.filterVideoSongs
 import com.metrolist.music.extensions.toEnum
+import com.metrolist.music.models.DefaultHomeLayout
+import com.metrolist.music.models.HomeSectionSetting
 import com.metrolist.music.models.SectionType
 import com.metrolist.music.models.SimilarRecommendation
 import com.metrolist.music.models.SpotifyHomeFilter
 import com.metrolist.music.models.SpotifyHomeSection
 import com.metrolist.music.models.buildSpotifyHome
+import com.metrolist.music.models.deserializeHomeLayout
 import com.metrolist.music.ui.screens.wrapped.WrappedAudioService
 import com.metrolist.music.ui.screens.wrapped.WrappedManager
 import com.metrolist.music.utils.NetworkConnectivityObserver
@@ -283,6 +287,11 @@ class HomeViewModel @Inject constructor(
     val podcastNewEpisodes = MutableStateFlow<List<SongItem>>(emptyList())
     val spotifyHomeFilter = MutableStateFlow(SpotifyHomeFilter.ALL)
 
+    val homeLayout: StateFlow<List<HomeSectionSetting>> = context.dataStore.data
+        .map { prefs -> deserializeHomeLayout(prefs[HomeSectionsOrderKey]) }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Lazily, DefaultHomeLayout)
+
     // What the Spotify home actually shows: Spotify music + YouTube Music podcasts for the
     // selected chip, with episode state re-emitted whenever MusicService saves a position.
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -291,12 +300,14 @@ class HomeViewModel @Inject constructor(
             spotifyHomeSections,
             podcastNewEpisodes,
             savedPodcastShows,
-            spotifyHomeFilter,
+            combine(spotifyHomeFilter, homeLayout, ::Pair),
             podcastNewEpisodes.flatMapLatest { episodes ->
                 if (episodes.isEmpty()) flowOf(emptyList()) else database.songEntitiesByIds(episodes.map { it.id })
             },
-        ) { sections, episodes, shows, filter, localPlayback ->
-            sections?.let { buildSpotifyHome(it, episodes, shows, localPlayback.associateBy { song -> song.id }, filter) }
+        ) { sections, episodes, shows, (filter, layout), localPlayback ->
+            sections?.let {
+                buildSpotifyHome(it, episodes, shows, localPlayback.associateBy { song -> song.id }, filter, layout)
+            }
         }.stateIn(viewModelScope, SharingStarted.Lazily, null)
     val useSpotifyHome: StateFlow<Boolean> = context.dataStore.data.map { prefs ->
         val enabled = prefs[EnableSpotifyKey] ?: false
@@ -806,7 +817,7 @@ class HomeViewModel @Inject constructor(
                 type = SectionType.ARTISTS,
                 artists = artists.map(::toSpotifyArtist),
             )
-            SectionType.TRACKS, SectionType.SHORTCUTS, SectionType.SHOWS -> null
+            SectionType.TRACKS, SectionType.SHORTCUTS, SectionType.SHOWS, SectionType.SPEED_DIAL -> null
         }
     }
 

@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
@@ -1507,324 +1508,329 @@ fun HomeScreen(
                     }
                 }
 
-                homeSections.forEach { section ->
-                    when (section) {
-                        HomeSection.SpeedDial -> {
-                            speedDialItems.takeIf { it.isNotEmpty() }?.let { items ->
-                                item(key = "speed_dial_title") {
-                                    NavigationTitle(
-                                        title = stringResource(R.string.speed_dial),
-                                    )
+                fun LazyListScope.speedDialSection() {
+                    speedDialItems.takeIf { it.isNotEmpty() }?.let { items ->
+                        item(key = "speed_dial_title") {
+                            NavigationTitle(
+                                title = stringResource(R.string.speed_dial),
+                            )
+                        }
+
+                        item(key = "speed_dial_list") {
+                            val targetItemSize = 160.dp
+                            val availableWidth = maxWidth - 32.dp
+                            val columns = (availableWidth / targetItemSize).toInt().coerceAtLeast(3)
+                            val rows =
+                                if (columns >= 6) {
+                                    1
+                                } else if (columns >= 4) {
+                                    2
+                                } else {
+                                    3
                                 }
+                            val itemsPerPage = columns * rows
+                            val itemWidth = availableWidth / columns
 
-                                item(key = "speed_dial_list") {
-                                    val targetItemSize = 160.dp
-                                    val availableWidth = maxWidth - 32.dp
-                                    val columns = (availableWidth / targetItemSize).toInt().coerceAtLeast(3)
-                                    val rows =
-                                        if (columns >= 6) {
-                                            1
-                                        } else if (columns >= 4) {
-                                            2
-                                        } else {
-                                            3
-                                        }
-                                    val itemsPerPage = columns * rows
-                                    val itemWidth = availableWidth / columns
+                            val pagerState = rememberPagerState(pageCount = { (items.size + itemsPerPage - 1) / itemsPerPage })
 
-                                    val pagerState = rememberPagerState(pageCount = { (items.size + itemsPerPage - 1) / itemsPerPage })
+                            Column(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth(),
+                            ) {
+                                HorizontalPager(
+                                    state = pagerState,
+                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                    pageSpacing = 16.dp,
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .height(itemWidth * rows),
+                                ) { page ->
+                                    val pageStartIndex = page * itemsPerPage
+                                    val pageItems = items.drop(pageStartIndex).take(itemsPerPage)
 
-                                    Column(
-                                        modifier =
-                                            Modifier
-                                                .fillMaxWidth(),
-                                    ) {
-                                        HorizontalPager(
-                                            state = pagerState,
-                                            contentPadding = PaddingValues(horizontal = 16.dp),
-                                            pageSpacing = 16.dp,
-                                            modifier =
-                                                Modifier
-                                                    .fillMaxWidth()
-                                                    .height(itemWidth * rows),
-                                        ) { page ->
-                                            val pageStartIndex = page * itemsPerPage
-                                            val pageItems = items.drop(pageStartIndex).take(itemsPerPage)
+                                    Column(modifier = Modifier.fillMaxSize()) {
+                                        for (row in 0 until rows) {
+                                            Row(modifier = Modifier.fillMaxWidth()) {
+                                                for (col in 0 until columns) {
+                                                    val itemIndex = row * columns + col
 
-                                            Column(modifier = Modifier.fillMaxSize()) {
-                                                for (row in 0 until rows) {
-                                                    Row(modifier = Modifier.fillMaxWidth()) {
-                                                        for (col in 0 until columns) {
-                                                            val itemIndex = row * columns + col
+                                                    val isRandomizeSlot = (page == 0 && itemIndex == itemsPerPage - 1)
 
-                                                            val isRandomizeSlot = (page == 0 && itemIndex == itemsPerPage - 1)
-
-                                                            if (isRandomizeSlot) {
-                                                                Box(
-                                                                    modifier =
-                                                                        Modifier
-                                                                            .width(itemWidth)
-                                                                            .height(itemWidth)
-                                                                            .padding(4.dp),
-                                                                ) {
-                                                                    RandomizeGridItem(
-                                                                        isLoading = isRandomizing,
-                                                                        onClick = {
-                                                                            if (isRandomizing) {
-                                                                                randomizeJob?.cancel()
-                                                                            } else if (!isListenTogetherGuest) {
-                                                                                randomizeJob =
-                                                                                    scope.launch {
-                                                                                        val randomItem = viewModel.getRandomItem()
-                                                                                        if (randomItem != null) {
-                                                                                            when (randomItem) {
-                                                                                                is SongItem -> {
-                                                                                                    playerConnection.playQueue(
-                                                                                                        if (autoRadioQueue) {
-                                                                                                            YouTubeQueue(
-                                                                                                                randomItem.endpoint
-                                                                                                                    ?: WatchEndpoint(
-                                                                                                                        videoId = randomItem.id,
-                                                                                                                    ),
-                                                                                                                randomItem.toMediaMetadata(),
-                                                                                                            )
-                                                                                                        } else {
-                                                                                                            ListQueue(
-                                                                                                                title = randomItem.title,
-                                                                                                                items = listOf(randomItem.toMediaItem())
-                                                                                                            )
-                                                                                                        }
+                                                    if (isRandomizeSlot) {
+                                                        Box(
+                                                            modifier =
+                                                                Modifier
+                                                                    .width(itemWidth)
+                                                                    .height(itemWidth)
+                                                                    .padding(4.dp),
+                                                        ) {
+                                                            RandomizeGridItem(
+                                                                isLoading = isRandomizing,
+                                                                onClick = {
+                                                                    if (isRandomizing) {
+                                                                        randomizeJob?.cancel()
+                                                                    } else if (!isListenTogetherGuest) {
+                                                                        randomizeJob =
+                                                                            scope.launch {
+                                                                                val randomItem = viewModel.getRandomItem()
+                                                                                if (randomItem != null) {
+                                                                                    when (randomItem) {
+                                                                                        is SongItem -> {
+                                                                                            playerConnection.playQueue(
+                                                                                                if (autoRadioQueue) {
+                                                                                                    YouTubeQueue(
+                                                                                                        randomItem.endpoint
+                                                                                                            ?: WatchEndpoint(
+                                                                                                                videoId = randomItem.id,
+                                                                                                            ),
+                                                                                                        randomItem.toMediaMetadata(),
+                                                                                                    )
+                                                                                                } else {
+                                                                                                    ListQueue(
+                                                                                                        title = randomItem.title,
+                                                                                                        items = listOf(randomItem.toMediaItem())
                                                                                                     )
                                                                                                 }
+                                                                                            )
+                                                                                        }
 
-                                                                                                is AlbumItem -> {
-                                                                                                    navController.navigate(
-                                                                                                        "album/${randomItem.id}",
-                                                                                                    )
-                                                                                                }
+                                                                                        is AlbumItem -> {
+                                                                                            navController.navigate(
+                                                                                                "album/${randomItem.id}",
+                                                                                            )
+                                                                                        }
 
-                                                                                                is ArtistItem -> {
-                                                                                                    navController.navigate(
-                                                                                                        "artist/${randomItem.id}",
-                                                                                                    )
-                                                                                                }
+                                                                                        is ArtistItem -> {
+                                                                                            navController.navigate(
+                                                                                                "artist/${randomItem.id}",
+                                                                                            )
+                                                                                        }
 
-                                                                                                is PlaylistItem -> {
-                                                                                                    navigateToPlaylist(randomItem.id)
-                                                                                                }
+                                                                                        is PlaylistItem -> {
+                                                                                            navigateToPlaylist(randomItem.id)
+                                                                                        }
 
-                                                                                                is PodcastItem -> {
-                                                                                                    navController.navigate(
-                                                                                                        "online_podcast/${randomItem.id}",
-                                                                                                    )
-                                                                                                }
+                                                                                        is PodcastItem -> {
+                                                                                            navController.navigate(
+                                                                                                "online_podcast/${randomItem.id}",
+                                                                                            )
+                                                                                        }
 
-                                                                                                is EpisodeItem -> {
-                                                                                                    playerConnection.playQueue(
-                                                                                                        ListQueue(
-                                                                                                            title = randomItem.title,
-                                                                                                            items =
-                                                                                                                listOf(
-                                                                                                                    randomItem
-                                                                                                                        .toMediaMetadata()
-                                                                                                                        .toMediaItem(),
-                                                                                                                ),
+                                                                                        is EpisodeItem -> {
+                                                                                            playerConnection.playQueue(
+                                                                                                ListQueue(
+                                                                                                    title = randomItem.title,
+                                                                                                    items =
+                                                                                                        listOf(
+                                                                                                            randomItem
+                                                                                                                .toMediaMetadata()
+                                                                                                                .toMediaItem(),
                                                                                                         ),
-                                                                                                    )
-                                                                                                }
-                                                                                            }
+                                                                                                ),
+                                                                                            )
                                                                                         }
                                                                                     }
+                                                                                }
                                                                             }
-                                                                        },
-                                                                    )
-                                                                }
-                                                            } else if (itemIndex < pageItems.size) {
-                                                                val item = pageItems[itemIndex]
-                                                                val isPinned by database.speedDialDao
-                                                                    .isPinned(
-                                                                        item.id,
-                                                                    ).collectAsStateWithLifecycle(initialValue = false)
+                                                                    }
+                                                                },
+                                                            )
+                                                        }
+                                                    } else if (itemIndex < pageItems.size) {
+                                                        val item = pageItems[itemIndex]
+                                                        val isPinned by database.speedDialDao
+                                                            .isPinned(
+                                                                item.id,
+                                                            ).collectAsStateWithLifecycle(initialValue = false)
 
-                                                                Box(
-                                                                    modifier =
-                                                                        Modifier
-                                                                            .width(itemWidth)
-                                                                            .height(itemWidth)
-                                                                            .padding(4.dp),
-                                                                ) {
-                                                                    SpeedDialGridItem(
-                                                                        item = item,
-                                                                        isPinned = isPinned,
-                                                                        isActive =
-                                                                            item.id in listOf(mediaMetadata?.album?.id, mediaMetadata?.id),
-                                                                        isPlaying = isPlaying,
-                                                                        modifier =
-                                                                            Modifier
-                                                                                .fillMaxSize()
-                                                                                .combinedClickable(
-                                                                                    onClick = {
-                                                                                        when (item) {
-                                                                                            is SongItem -> {
-                                                                                                if (!isListenTogetherGuest) {
-                                                                                                    playerConnection.playQueue(
-                                                                                                        if (autoRadioQueue) {
-                                                                                                            YouTubeQueue(
-                                                                                                                item.endpoint
-                                                                                                                    ?: WatchEndpoint(
-                                                                                                                        videoId = item.id,
-                                                                                                                    ),
-                                                                                                                item.toMediaMetadata(),
-                                                                                                            )
-                                                                                                        } else {
-                                                                                                            ListQueue(
-                                                                                                                title = item.title,
-                                                                                                                items = listOf(item.toMediaItem())
-                                                                                                            )
-                                                                                                        }
+                                                        Box(
+                                                            modifier =
+                                                                Modifier
+                                                                    .width(itemWidth)
+                                                                    .height(itemWidth)
+                                                                    .padding(4.dp),
+                                                        ) {
+                                                            SpeedDialGridItem(
+                                                                item = item,
+                                                                isPinned = isPinned,
+                                                                isActive =
+                                                                    item.id in listOf(mediaMetadata?.album?.id, mediaMetadata?.id),
+                                                                isPlaying = isPlaying,
+                                                                modifier =
+                                                                    Modifier
+                                                                        .fillMaxSize()
+                                                                        .combinedClickable(
+                                                                            onClick = {
+                                                                                when (item) {
+                                                                                    is SongItem -> {
+                                                                                        if (!isListenTogetherGuest) {
+                                                                                            playerConnection.playQueue(
+                                                                                                if (autoRadioQueue) {
+                                                                                                    YouTubeQueue(
+                                                                                                        item.endpoint
+                                                                                                            ?: WatchEndpoint(
+                                                                                                                videoId = item.id,
+                                                                                                            ),
+                                                                                                        item.toMediaMetadata(),
+                                                                                                    )
+                                                                                                } else {
+                                                                                                    ListQueue(
+                                                                                                        title = item.title,
+                                                                                                        items = listOf(item.toMediaItem())
                                                                                                     )
                                                                                                 }
-                                                                                            }
+                                                                                            )
+                                                                                        }
+                                                                                    }
 
-                                                                                            is AlbumItem -> {
-                                                                                                navController.navigate("album/${item.id}")
-                                                                                            }
+                                                                                    is AlbumItem -> {
+                                                                                        navController.navigate("album/${item.id}")
+                                                                                    }
 
-                                                                                            is ArtistItem -> {
-                                                                                                navController.navigate("artist/${item.id}")
-                                                                                            }
+                                                                                    is ArtistItem -> {
+                                                                                        navController.navigate("artist/${item.id}")
+                                                                                    }
 
-                                                                                            is PlaylistItem -> {
-                                                                                                navigateToPlaylist(item.id)
-                                                                                            }
+                                                                                    is PlaylistItem -> {
+                                                                                        navigateToPlaylist(item.id)
+                                                                                    }
 
-                                                                                            is PodcastItem -> {
-                                                                                                navController.navigate(
-                                                                                                    "online_podcast/${item.id}",
+                                                                                    is PodcastItem -> {
+                                                                                        navController.navigate(
+                                                                                            "online_podcast/${item.id}",
+                                                                                        )
+                                                                                    }
+
+                                                                                    is EpisodeItem -> {
+                                                                                        if (!isListenTogetherGuest) {
+                                                                                            playerConnection.playQueue(
+                                                                                                ListQueue(
+                                                                                                    title = item.title,
+                                                                                                    items =
+                                                                                                        listOf(
+                                                                                                            item
+                                                                                                                .toMediaMetadata()
+                                                                                                                .toMediaItem(),
+                                                                                                        ),
+                                                                                                ),
+                                                                                            )
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            },
+                                                                            onLongClick = {
+                                                                                haptic.performHapticFeedback(
+                                                                                    HapticFeedbackType.LongPress,
+                                                                                )
+                                                                                menuState.show {
+                                                                                    when (item) {
+                                                                                        is SongItem -> {
+                                                                                            YouTubeSongMenu(
+                                                                                                song = item,
+                                                                                                onDismiss = menuState::dismiss,
+                                                                                            )
+                                                                                        }
+
+                                                                                        is AlbumItem -> {
+                                                                                            YouTubeAlbumMenu(
+                                                                                                albumItem = item,
+                                                                                                onDismiss = menuState::dismiss,
+                                                                                            )
+                                                                                        }
+
+                                                                                        is ArtistItem -> {
+                                                                                            YouTubeArtistMenu(
+                                                                                                artist = item,
+                                                                                                onDismiss = menuState::dismiss,
+                                                                                            )
+                                                                                        }
+
+                                                                                        is PlaylistItem -> {
+                                                                                            if (item.id.isSpotifyId()) {
+                                                                                                SpotifyPlaylistMenu(
+                                                                                                    spotifyId = item.id,
+                                                                                                    title = item.title,
+                                                                                                    thumbnail = item.thumbnail,
+                                                                                                    onNavigate = { navController.navigate("spotify_playlist/${item.id.stripSpotifyPrefix()}") },
+                                                                                                    onDismiss = menuState::dismiss,
+                                                                                                )
+                                                                                            } else {
+                                                                                                YouTubePlaylistMenu(
+                                                                                                    playlist = item,
+                                                                                                    coroutineScope = scope,
+                                                                                                    onDismiss = menuState::dismiss,
                                                                                                 )
                                                                                             }
-
-                                                                                            is EpisodeItem -> {
-                                                                                                if (!isListenTogetherGuest) {
-                                                                                                    playerConnection.playQueue(
-                                                                                                        ListQueue(
-                                                                                                            title = item.title,
-                                                                                                            items =
-                                                                                                                listOf(
-                                                                                                                    item
-                                                                                                                        .toMediaMetadata()
-                                                                                                                        .toMediaItem(),
-                                                                                                                ),
-                                                                                                        ),
-                                                                                                    )
-                                                                                                }
-                                                                                            }
                                                                                         }
-                                                                                    },
-                                                                                    onLongClick = {
-                                                                                        haptic.performHapticFeedback(
-                                                                                            HapticFeedbackType.LongPress,
-                                                                                        )
-                                                                                        menuState.show {
-                                                                                            when (item) {
-                                                                                                is SongItem -> {
-                                                                                                    YouTubeSongMenu(
-                                                                                                        song = item,
-                                                                                                        onDismiss = menuState::dismiss,
-                                                                                                    )
-                                                                                                }
 
-                                                                                                is AlbumItem -> {
-                                                                                                    YouTubeAlbumMenu(
-                                                                                                        albumItem = item,
-                                                                                                        onDismiss = menuState::dismiss,
-                                                                                                    )
-                                                                                                }
-
-                                                                                                is ArtistItem -> {
-                                                                                                    YouTubeArtistMenu(
-                                                                                                        artist = item,
-                                                                                                        onDismiss = menuState::dismiss,
-                                                                                                    )
-                                                                                                }
-
-                                                                                                is PlaylistItem -> {
-                                                                                                    if (item.id.isSpotifyId()) {
-                                                                                                        SpotifyPlaylistMenu(
-                                                                                                            spotifyId = item.id,
-                                                                                                            title = item.title,
-                                                                                                            thumbnail = item.thumbnail,
-                                                                                                            onNavigate = { navController.navigate("spotify_playlist/${item.id.stripSpotifyPrefix()}") },
-                                                                                                            onDismiss = menuState::dismiss,
-                                                                                                        )
-                                                                                                    } else {
-                                                                                                        YouTubePlaylistMenu(
-                                                                                                            playlist = item,
-                                                                                                            coroutineScope = scope,
-                                                                                                            onDismiss = menuState::dismiss,
-                                                                                                        )
-                                                                                                    }
-                                                                                                }
-
-                                                                                                is PodcastItem -> {
-                                                                                                    YouTubePlaylistMenu(
-                                                                                                        playlist = item.asPlaylistItem(),
-                                                                                                        coroutineScope = scope,
-                                                                                                        onDismiss = menuState::dismiss,
-                                                                                                    )
-                                                                                                }
-
-                                                                                                is EpisodeItem -> {
-                                                                                                    YouTubeSongMenu(
-                                                                                                        song = item.asSongItem(),
-                                                                                                        onDismiss = menuState::dismiss,
-                                                                                                    )
-                                                                                                }
-                                                                                            }
+                                                                                        is PodcastItem -> {
+                                                                                            YouTubePlaylistMenu(
+                                                                                                playlist = item.asPlaylistItem(),
+                                                                                                coroutineScope = scope,
+                                                                                                onDismiss = menuState::dismiss,
+                                                                                            )
                                                                                         }
-                                                                                    },
-                                                                                ),
-                                                                    )
-                                                                }
-                                                            } else {
-                                                                Spacer(modifier = Modifier.width(itemWidth))
-                                                            }
+
+                                                                                        is EpisodeItem -> {
+                                                                                            YouTubeSongMenu(
+                                                                                                song = item.asSongItem(),
+                                                                                                onDismiss = menuState::dismiss,
+                                                                                            )
+                                                                                        }
+                                                                                    }
+                                                                                }
+                                                                            },
+                                                                        ),
+                                                            )
                                                         }
+                                                    } else {
+                                                        Spacer(modifier = Modifier.width(itemWidth))
                                                     }
-                                                }
-                                            }
-                                        }
-
-                                        if (pagerState.pageCount > 1) {
-                                            Row(
-                                                modifier =
-                                                    Modifier
-                                                        .height(24.dp)
-                                                        .fillMaxWidth(),
-                                                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
-                                                verticalAlignment = Alignment.CenterVertically,
-                                            ) {
-                                                repeat(pagerState.pageCount) { iteration ->
-                                                    val color =
-                                                        if (pagerState.currentPage == iteration) {
-                                                            MaterialTheme.colorScheme.primary
-                                                        } else {
-                                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                                        }
-                                                    Box(
-                                                        modifier =
-                                                            Modifier
-                                                                .padding(4.dp)
-                                                                .clip(CircleShape)
-                                                                .background(color)
-                                                                .size(8.dp),
-                                                    )
                                                 }
                                             }
                                         }
                                     }
                                 }
+
+                                if (pagerState.pageCount > 1) {
+                                    Row(
+                                        modifier =
+                                            Modifier
+                                                .height(24.dp)
+                                                .fillMaxWidth(),
+                                        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        repeat(pagerState.pageCount) { iteration ->
+                                            val color =
+                                                if (pagerState.currentPage == iteration) {
+                                                    MaterialTheme.colorScheme.primary
+                                                } else {
+                                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                                }
+                                            Box(
+                                                modifier =
+                                                    Modifier
+                                                        .padding(4.dp)
+                                                        .clip(CircleShape)
+                                                        .background(color)
+                                                        .size(8.dp),
+                                            )
+                                        }
+                                    }
+                                }
                             }
+                        }
+                    }
+                }
+
+                homeSections.forEach { section ->
+                    when (section) {
+                        HomeSection.SpeedDial -> {
+                            // On the Spotify home the speed dial is placed by the user's section layout instead.
+                            if (!(isSpotifyHome && spotifyHomeSections != null)) speedDialSection()
                         }
 
                         HomeSection.QuickPicks -> {
@@ -2654,6 +2660,10 @@ fun HomeScreen(
                         }
                     }
                     spotifyHomeSections?.forEachIndexed { index, section ->
+                        if (section.type == SectionType.SPEED_DIAL) {
+                            speedDialSection()
+                            return@forEachIndexed
+                        }
                         if (section.title.isNotEmpty()) {
                             item(key = "spotify_section_title_$index") {
                                 NavigationTitle(
@@ -2791,6 +2801,7 @@ fun HomeScreen(
                                         }
                                     }
                                 }
+                                SectionType.SPEED_DIAL -> Unit
                             }
                         }
                     }
