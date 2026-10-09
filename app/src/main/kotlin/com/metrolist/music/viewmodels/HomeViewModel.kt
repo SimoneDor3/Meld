@@ -131,7 +131,6 @@ class HomeViewModel @Inject constructor(
     }.distinctUntilChanged()
 
     val quickPicks = MutableStateFlow<List<Song>?>(null)
-    val recentlyPlayed = MutableStateFlow<List<Song>?>(null)
     val dailyDiscover = MutableStateFlow<List<DailyDiscoverItem>?>(null)
     val forgottenFavorites = MutableStateFlow<List<Song>?>(null)
     val keepListening = MutableStateFlow<List<LocalItem>?>(null)
@@ -548,13 +547,6 @@ class HomeViewModel @Inject constructor(
         val isSpotifyHome = spotifyEnabled && spotifyUseForHome && spotifyHasToken
         val isSpotifyOnly = isSpotifyHome && spotifyHomeOnlyPref
 
-        // Local play history — always loaded regardless of Spotify mode
-        recentlyPlayed.value = database.events().first()
-            .distinctBy { it.song.id }
-            .take(40)
-            .map { it.song }
-            .filterVideoSongs(hideVideoSongs)
-
         // When Spotify-only mode is active, skip all YouTube-based content
         if (!isSpotifyOnly) {
             getQuickPicks()
@@ -775,6 +767,7 @@ class HomeViewModel @Inject constructor(
      * podcasts come from YouTube Music.
      */
     private fun convertHomeSection(feedSection: SpotifyHomeFeedSection): SpotifyHomeSection? {
+        if (feedSection.typename == "HomeRecentlyPlayedSectionData") return null
         if (feedSection.typename == "HomeShortsSectionData") {
             return SpotifyHomeSection(title = "", type = SectionType.SHORTCUTS, shortcuts = feedSection.items)
         }

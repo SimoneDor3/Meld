@@ -201,7 +201,6 @@ sealed class HomeSection(
     data object SpeedDial : HomeSection("speed_dial", 100)
 
     data object QuickPicks : HomeSection("quick_picks", 90)
-    data object RecentlyPlayed : HomeSection("recently_played", 85)
 
     data object DailyDiscover : HomeSection("daily_discover", 80)
 
@@ -682,7 +681,6 @@ fun HomeScreen(
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
     val quickPicks by viewModel.quickPicks.collectAsStateWithLifecycle()
-    val recentlyPlayed by viewModel.recentlyPlayed.collectAsStateWithLifecycle()
     val forgottenFavorites by viewModel.forgottenFavorites.collectAsStateWithLifecycle()
     val keepListening by viewModel.keepListening.collectAsStateWithLifecycle()
     val similarRecommendations by viewModel.similarRecommendations.collectAsStateWithLifecycle()
@@ -1091,7 +1089,6 @@ fun HomeScreen(
             isSpotifyHomeOnly,
             speedDialItems,
             quickPicks,
-            recentlyPlayed,
             dailyDiscover,
             keepListening,
             accountPlaylists,
@@ -1103,8 +1100,6 @@ fun HomeScreen(
         ) {
             val list = mutableListOf<HomeSection>()
             val chipActive = selectedChip != null
-
-            if (recentlyPlayed?.isNotEmpty() == true) list.add(HomeSection.RecentlyPlayed)
 
             // Show speed dial when we have pinned items (including when Spotify-only home is on)
             if (speedDialItems.isNotEmpty()) list.add(HomeSection.SpeedDial)
@@ -1136,7 +1131,6 @@ fun HomeScreen(
                         when (section) {
                             HomeSection.SpeedDial,
                             HomeSection.QuickPicks,
-                            HomeSection.RecentlyPlayed,
                             HomeSection.DailyDiscover,
                             -> 500
 
@@ -1153,7 +1147,6 @@ fun HomeScreen(
                         when (section) {
                             HomeSection.SpeedDial,
                             HomeSection.QuickPicks,
-                            HomeSection.RecentlyPlayed,
                             HomeSection.DailyDiscover,
                             -> sectionRandom.nextInt(-200, 400)
 
@@ -1172,7 +1165,6 @@ fun HomeScreen(
                     mapOf(
                         HomeSection.SpeedDial to 100,
                         HomeSection.QuickPicks to 90,
-                        HomeSection.RecentlyPlayed to 85,
                         HomeSection.FromTheCommunity to 80,
                         HomeSection.DailyDiscover to 70,
                         HomeSection.KeepListening to 60,
@@ -2499,98 +2491,6 @@ fun HomeScreen(
                                 }
                             }
                         }
-                        HomeSection.RecentlyPlayed -> {
-                                recentlyPlayed?.takeIf { it.isNotEmpty() }?.let { songs ->
-                                    val recentTitle = viewModel.context.getString(R.string.recently_played)
-                                    item(key = "recently_played_title") {
-                                        NavigationTitle(
-                                            title = recentTitle,
-                                            modifier = Modifier.animateItem(),
-                                            onPlayAllClick = {
-                                                playerConnection.playQueue(
-                                                    ListQueue(
-                                                        title = recentTitle,
-                                                        items = songs.distinctBy { it.id }.map { it.toMediaItem() }
-                                                    )
-                                                )
-                                            }
-                                        )
-                                    }
-
-                                    item(key = "recently_played_list") {
-                                        val rows = if (songs.size > 6) 2 else 1
-                                        LazyHorizontalGrid(
-                                            state = rememberLazyGridState(),
-                                            rows = GridCells.Fixed(rows),
-                                            contentPadding = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)
-                                                .asPaddingValues(),
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .height(ListItemHeight * rows)
-                                                .animateItem()
-                                        ) {
-                                            items(
-                                                items = songs.distinctBy { it.id },
-                                                key = { "rp_${it.id}" }
-                                            ) { originalSong ->
-                                                val song by database.song(originalSong.id)
-                                                    .collectAsStateWithLifecycle(initialValue = originalSong)
-
-                                                SongListItem(
-                                                    song = song!!,
-                                                    showInLibraryIcon = true,
-                                                    isActive = song!!.id == mediaMetadata?.id,
-                                                    isPlaying = isPlaying,
-                                                    isSwipeable = false,
-                                                    trailingContent = {
-                                                        IconButton(
-                                                            onClick = {
-                                                                menuState.show {
-                                                                    SongMenu(
-                                                                        originalSong = song!!,
-                                                                        onDismiss = menuState::dismiss
-                                                                    )
-                                                                }
-                                                            }
-                                                        ) {
-                                                            Icon(
-                                                                painter = painterResource(R.drawable.more_vert),
-                                                                contentDescription = null
-                                                            )
-                                                        }
-                                                    },
-                                                    modifier = Modifier
-                                                        .width(horizontalLazyGridItemWidth)
-                                                        .combinedClickable(
-                                                            onClick = {
-                                                                if (song!!.id == mediaMetadata?.id) {
-                                                                    playerConnection.togglePlayPause()
-                                                                } else {
-                                                                    playerConnection.playQueue(
-                                                                        ListQueue(
-                                                                            title = recentTitle,
-                                                                            items = songs.map { it.toMediaItem() },
-                                                                            startIndex = songs.indexOfFirst { it.id == song!!.id }.coerceAtLeast(0)
-                                                                        )
-                                                                    )
-                                                                }
-                                                            },
-                                                            onLongClick = {
-                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                                menuState.show {
-                                                                    SongMenu(
-                                                                        originalSong = song!!,
-                                                                        onDismiss = menuState::dismiss
-                                                                    )
-                                                                }
-                                                            }
-                                                        )
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
 
                         HomeSection.MoodAndGenres -> {
                             // Skip MoodAndGenres when podcast chip is selected
