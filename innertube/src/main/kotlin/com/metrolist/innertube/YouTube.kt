@@ -84,7 +84,6 @@ import timber.log.Timber
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.net.Proxy
-import kotlin.random.Random
 
 /**
  * Parse useful data with [InnerTube] sending requests.
@@ -2936,27 +2935,56 @@ object YouTube {
             innerTube.player(client, videoId, playlistId, signatureTimestamp, poToken).body<PlayerResponse>()
         }
 
+    private const val CPN_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+
+    /**
+     * Client playback nonce identifying one playback session: its [registerPlayback] and every
+     * [reportWatchtime] ping must share it.
+     */
+    fun newCpn(): String = (1..16).map { CPN_ALPHABET.random() }.joinToString("")
+
     suspend fun registerPlayback(
         playlistId: String? = null,
         playbackTracking: String,
+        cpn: String = newCpn(),
     ) = runCatching {
-        val cpn =
-            (1..16)
-                .map {
-                    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"[
-                        Random.Default.nextInt(
-                            0,
-                            64,
-                        ),
-                    ]
-                }.joinToString("")
-
         innerTube.registerPlayback(
             url = playbackTracking,
             playlistId = playlistId,
             cpn = cpn,
         )
     }
+
+    /**
+     * Reports the media range played since the previous ping of this playback so YouTube resumes
+     * the video at [positionSec]. Requires a signed-in session.
+     */
+    suspend fun reportWatchtime(
+        watchtimeUrl: String,
+        cpn: String,
+        segmentStartSec: Double,
+        segmentEndSec: Double,
+        positionSec: Double,
+        lengthSec: Double,
+        elapsedRealSec: Double,
+        state: WatchtimeState,
+        final: Boolean = false,
+    ): Result<Unit> =
+        runCatching {
+            innerTube.reportWatchtime(
+                buildWatchtimeUrl(
+                    baseUrl = watchtimeUrl,
+                    cpn = cpn,
+                    segmentStartSec = segmentStartSec,
+                    segmentEndSec = segmentEndSec,
+                    positionSec = positionSec,
+                    lengthSec = lengthSec,
+                    elapsedRealSec = elapsedRealSec,
+                    state = state,
+                    final = final,
+                ),
+            )
+        }
 
     suspend fun next(
         endpoint: WatchEndpoint,
