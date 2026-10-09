@@ -37,7 +37,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = applicationIdOverride ?: "com.meld.app"
+        applicationId = applicationIdOverride ?: "com.pond.app"
         minSdk = 26
         targetSdk = 36
         versionCode = 28
