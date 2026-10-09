@@ -317,6 +317,7 @@ val LastSeenVersionKey = stringPreferencesKey("lastSeenVersion")
 val ShowRecognizeButtonKey = booleanPreferencesKey("showRecognizeButton")
 val ShowPlayRandomButtonKey = booleanPreferencesKey("showPlayRandomButton")
 val RandomizeHomeOrderKey = booleanPreferencesKey("randomizeHomeOrder")
+val ShowPodcastSuggestionsKey = booleanPreferencesKey("showPodcastSuggestions")
 
 val ShowLikedPlaylistKey = booleanPreferencesKey("show_liked_playlist")
 val ShowDownloadedPlaylistKey = booleanPreferencesKey("show_downloaded_playlist")

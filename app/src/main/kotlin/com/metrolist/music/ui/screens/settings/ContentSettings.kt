@@ -81,6 +81,7 @@ import com.metrolist.music.constants.ProxyUsernameKey
 import com.metrolist.music.constants.QuickPicks
 import com.metrolist.music.constants.QuickPicksKey
 import com.metrolist.music.constants.RandomizeHomeOrderKey
+import com.metrolist.music.constants.ShowPodcastSuggestionsKey
 import com.metrolist.music.constants.SYSTEM_DEFAULT
 import com.metrolist.music.constants.ShowArtistDescriptionKey
 import com.metrolist.music.constants.ShowMostStatsPlaylistsKey
@@ -140,6 +141,10 @@ fun ContentSettings(
         rememberPreference(key = ShowMostStatsPlaylistsKey, defaultValue = true)
     val (randomizeHomeOrder, onRandomizeHomeOrderChange) = rememberPreference(
         RandomizeHomeOrderKey,
+        defaultValue = true
+    )
+    val (showPodcastSuggestions, onShowPodcastSuggestionsChange) = rememberPreference(
+        ShowPodcastSuggestionsKey,
         defaultValue = true
     )
     val (addToPlaylistPosition, onAddToPlaylistPositionChange) = rememberEnumPreference(
@@ -1089,6 +1094,27 @@ fun ContentSettings(
                         )
                     },
                     onClick = { onRandomizeHomeOrderChange(!randomizeHomeOrder) }
+                ),
+                Material3SettingsItem(
+                    icon = painterResource(R.drawable.mic),
+                    title = { Text(stringResource(R.string.podcast_suggestions)) },
+                    description = { Text(stringResource(R.string.podcast_suggestions_desc)) },
+                    trailingContent = {
+                        Switch(
+                            checked = showPodcastSuggestions,
+                            onCheckedChange = onShowPodcastSuggestionsChange,
+                            thumbContent = {
+                                Icon(
+                                    painter = painterResource(
+                                        id = if (showPodcastSuggestions) R.drawable.check else R.drawable.close
+                                    ),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(SwitchDefaults.IconSize)
+                                )
+                            }
+                        )
+                    },
+                    onClick = { onShowPodcastSuggestionsChange(!showPodcastSuggestions) }
                 ),
                 Material3SettingsItem(
                     icon = painterResource(R.drawable.trending_up),

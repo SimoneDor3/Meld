@@ -832,6 +832,8 @@
     <string name="unpin">Unpin</string>
     <string name="randomize_home_order">Randomize home screen order</string>
     <string name="randomize_home_order_desc">Randomly reorder home screen sections using weighted priorities</string>
+    <string name="podcast_suggestions">Podcast suggestions</string>
+    <string name="podcast_suggestions_desc">Show podcasts from your YouTube Music library on the Spotify home</string>
 
     <!-- Daily Discover -->
     <string name="daily_discover_sounds_like">Sounds like %1$s</string>
