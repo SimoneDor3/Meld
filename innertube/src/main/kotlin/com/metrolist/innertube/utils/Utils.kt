@@ -55,6 +55,12 @@ fun ByteArray.toHex(): String = joinToString(separator = "") { eachByte -> "%02x
 
 fun sha1(str: String): String = MessageDigest.getInstance("SHA-1").digest(str.toByteArray()).toHex()
 
+internal fun sapisidAuthorization(
+    sapisid: String,
+    origin: String,
+    timestampSec: Long,
+): String = "SAPISIDHASH ${timestampSec}_${sha1("$timestampSec $sapisid $origin")}"
+
 fun parseCookieString(cookie: String): Map<String, String> =
     cookie.split("; ")
         .filter { it.isNotEmpty() }

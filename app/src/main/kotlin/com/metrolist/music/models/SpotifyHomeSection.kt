@@ -41,11 +41,16 @@ enum class SectionType {
     SHOWS,
 }
 
-/** A YouTube Music podcast episode with the listening state shown on its home tile. */
+/**
+ * A YouTube Music podcast episode with the listening state shown on its home tile.
+ * [resumePositionMs] is where to start playback from YouTube's progress when it is ahead of Meld's
+ * own saved position; 0 otherwise (MusicService restores the local position).
+ */
 data class HomeEpisode(
     val song: SongItem,
     val progress: Float?,
     val isNew: Boolean,
+    val resumePositionMs: Long = 0L,
 )
 
 /** A podcast show on the home grid, built from its recent [episodes] (newest first). */
@@ -147,14 +152,27 @@ private fun List<HomeEpisode>.groupIntoPodcasts(shows: List<PodcastItem>): List<
     }
 }
 
+// YouTube marks an episode as played around the end without always reaching 100%.
+private const val YOUTUBE_COMPLETED_FRACTION = 0.97f
+
+/** Merges Meld's [local] saved position with the progress YouTube reports for the episode. */
 internal fun SongItem.toHomeEpisode(local: SongEntity?): HomeEpisode {
     val position = local?.playbackPosition?.takeIf { it > 0 }
     val totalMs = (local?.duration?.takeIf { it > 0 } ?: duration ?: 0) * 1000L
     // MusicService saves the position every 15 s, so the last save can stop short of the end.
-    val completed = position != null && totalMs > 0 && position >= totalMs - 30_000
+    val localCompleted = position != null && totalMs > 0 && position >= totalMs - 30_000
+    val localFraction = if (position != null && totalMs > 0) position.toFloat() / totalMs else null
+    val youTubeFraction = playbackProgress?.takeIf { it > 0f }
+    val completed = localCompleted || (youTubeFraction != null && youTubeFraction >= YOUTUBE_COMPLETED_FRACTION)
+    val progress = if (completed) null else listOfNotNull(localFraction, youTubeFraction).maxOrNull()
     return HomeEpisode(
         song = this,
-        progress = if (position != null && !completed && totalMs > 0) position.toFloat() / totalMs else null,
-        isNew = position == null,
+        progress = progress,
+        isNew = position == null && youTubeFraction == null,
+        resumePositionMs = youTubeFraction
+            ?.takeIf { !completed && totalMs > 0 }
+            ?.let { (it * totalMs).toLong() }
+            ?.takeIf { it > (position ?: 0L) }
+            ?: 0L,
     )
 }

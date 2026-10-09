@@ -5,6 +5,8 @@ import com.metrolist.innertube.models.ReturnYouTubeDislikeResponse
 import com.metrolist.innertube.models.YouTubeClient
 import com.metrolist.innertube.models.YouTubeLocale
 import com.metrolist.innertube.models.response.NextResponse
+import com.metrolist.innertube.utils.parseCookieString
+import com.metrolist.innertube.utils.sapisidAuthorization
 import com.metrolist.innertubex.InnerTube as InnerTubeX
 import com.metrolist.innertubex.InnerTubeHttpException
 import io.ktor.client.HttpClient
@@ -20,6 +22,7 @@ import io.ktor.client.request.url
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
@@ -35,6 +38,10 @@ import java.io.InputStream
 import java.net.Proxy
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+
+private const val ORIGIN_YOUTUBE_MUSIC = "https://music.youtube.com"
+private const val USER_AGENT_WEB =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
 
 /**
  * Compatibility facade that keeps Metrolist's parsed response models while InnerTubeX owns
@@ -216,6 +223,25 @@ class InnerTube {
         playlistId: String?,
         client: YouTubeClient = YouTubeClient.WEB_REMIX,
     ) = innerTubeX.registerPlayback(client, url, cpn, playlistId).requireSuccess("registerPlayback")
+
+    /** Sends a complete watchtime ping as the signed-in YouTube Music web client. */
+    suspend fun reportWatchtime(url: String) {
+        val cookie = cookie.orEmpty()
+        val sapisid = parseCookieString(cookie)["SAPISID"] ?: error("Watchtime pings need a signed-in session")
+        httpClient
+            .get(url) {
+                header(HttpHeaders.Cookie, cookie)
+                header(
+                    HttpHeaders.Authorization,
+                    sapisidAuthorization(sapisid, ORIGIN_YOUTUBE_MUSIC, System.currentTimeMillis() / 1000),
+                )
+                header("X-Goog-AuthUser", authUser)
+                visitorData?.let { header("X-Goog-Visitor-Id", it) }
+                header(HttpHeaders.Origin, ORIGIN_YOUTUBE_MUSIC)
+                header(HttpHeaders.Referrer, "$ORIGIN_YOUTUBE_MUSIC/")
+                header(HttpHeaders.UserAgent, USER_AGENT_WEB)
+            }.requireSuccess("reportWatchtime")
+    }
 
     suspend fun browse(
         client: YouTubeClient,

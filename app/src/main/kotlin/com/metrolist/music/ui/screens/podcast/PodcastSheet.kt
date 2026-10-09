@@ -189,6 +189,7 @@ fun PodcastSheet(
                                         title = podcast?.title,
                                         items = episodes.map { it.toMediaMetadata().toMediaItem() },
                                         startIndex = index,
+                                        position = state?.resumePositionMs ?: 0L,
                                     ),
                                 )
                             }
