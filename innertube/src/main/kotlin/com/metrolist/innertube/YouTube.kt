@@ -1,6 +1,7 @@
 package com.metrolist.innertube
 
 import com.metrolist.innertube.models.AccountInfo
+import com.metrolist.innertube.models.Album
 import com.metrolist.innertube.models.AlbumItem
 import com.metrolist.innertube.models.Artist
 import com.metrolist.innertube.models.ArtistItem
@@ -83,7 +84,6 @@ import timber.log.Timber
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.net.Proxy
-import kotlin.random.Random
 
 /**
  * Parse useful data with [InnerTube] sending requests.
@@ -2402,6 +2402,12 @@ object YouTube {
             libraryPage.items.filterIsInstance<PodcastItem>()
         }
 
+    private fun List<Run>?.podcastAlbum(): Album? =
+        this?.firstNotNullOfOrNull { run ->
+            val id = run.navigationEndpoint?.browseEndpoint?.browseId
+            if (id != null && id.startsWith("MPSP")) Album(name = run.text, id = id) else null
+        }
+
     /**
      * Fetch "New Episodes" auto-playlist (VLRDPN).
      * Returns new episodes from saved/subscribed podcasts.
@@ -2561,15 +2567,23 @@ object YouTube {
                             listOf(Artist(name = artistName, id = browseId))
                         } else emptyList()
 
+                        val podcast = renderer.secondSubtitle?.runs.podcastAlbum()
+                            ?: renderer.secondarySubtitle?.runs.podcastAlbum()
+                            ?: renderer.subtitle?.runs.podcastAlbum()
+                            ?: browseId?.takeIf { it.startsWith("MPSP") }?.let { id ->
+                                artistName?.takeIf { it.isNotBlank() }?.let { Album(name = it, id = id) }
+                            }
+
                         episodesList.add(
                             SongItem(
                                 id = renderer.onTap.watchEndpoint.videoId,
                                 title = title,
                                 artists = artists,
-                                album = null,
+                                album = podcast,
                                 duration = duration,
                                 thumbnail = renderer.thumbnail?.getThumbnailUrl() ?: "",
                                 isEpisode = true,
+                                playbackProgress = renderer.playbackProgress?.fraction,
                             )
                         )
                     }
@@ -2609,15 +2623,20 @@ object YouTube {
                                 listOf(Artist(name = artistName, id = null))
                             } else emptyList()
 
+                            val podcast = renderer.secondSubtitle?.runs.podcastAlbum()
+                                ?: renderer.secondarySubtitle?.runs.podcastAlbum()
+                                ?: renderer.subtitle?.runs.podcastAlbum()
+
                             episodesList.add(
                                 SongItem(
                                     id = renderer.onTap.watchEndpoint.videoId,
                                     title = title,
                                     artists = artists,
-                                    album = null,
+                                    album = podcast,
                                     duration = duration,
                                     thumbnail = renderer.thumbnail?.getThumbnailUrl() ?: "",
                                     isEpisode = true,
+                                    playbackProgress = renderer.playbackProgress?.fraction,
                                 )
                             )
                         }
@@ -2918,27 +2937,56 @@ object YouTube {
             innerTube.player(client, videoId, playlistId, signatureTimestamp, poToken).body<PlayerResponse>()
         }
 
+    private const val CPN_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+
+    /**
+     * Client playback nonce identifying one playback session: its [registerPlayback] and every
+     * [reportWatchtime] ping must share it.
+     */
+    fun newCpn(): String = (1..16).map { CPN_ALPHABET.random() }.joinToString("")
+
     suspend fun registerPlayback(
         playlistId: String? = null,
         playbackTracking: String,
+        cpn: String = newCpn(),
     ) = runCatching {
-        val cpn =
-            (1..16)
-                .map {
-                    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"[
-                        Random.Default.nextInt(
-                            0,
-                            64,
-                        ),
-                    ]
-                }.joinToString("")
-
         innerTube.registerPlayback(
             url = playbackTracking,
             playlistId = playlistId,
             cpn = cpn,
         )
     }
+
+    /**
+     * Reports the media range played since the previous ping of this playback so YouTube resumes
+     * the video at [positionSec]. Requires a signed-in session.
+     */
+    suspend fun reportWatchtime(
+        watchtimeUrl: String,
+        cpn: String,
+        segmentStartSec: Double,
+        segmentEndSec: Double,
+        positionSec: Double,
+        lengthSec: Double,
+        elapsedRealSec: Double,
+        state: WatchtimeState,
+        final: Boolean = false,
+    ): Result<Unit> =
+        runCatching {
+            innerTube.reportWatchtime(
+                buildWatchtimeUrl(
+                    baseUrl = watchtimeUrl,
+                    cpn = cpn,
+                    segmentStartSec = segmentStartSec,
+                    segmentEndSec = segmentEndSec,
+                    positionSec = positionSec,
+                    lengthSec = lengthSec,
+                    elapsedRealSec = elapsedRealSec,
+                    state = state,
+                    final = final,
+                ),
+            )
+        }
 
     suspend fun next(
         endpoint: WatchEndpoint,

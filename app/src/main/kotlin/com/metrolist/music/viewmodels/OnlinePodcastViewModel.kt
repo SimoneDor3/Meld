@@ -13,6 +13,7 @@ import com.metrolist.music.utils.reportException
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,10 +32,11 @@ class OnlinePodcastViewModel @Inject constructor(
     val database: MusicDatabase,
     private val syncUtils: SyncUtils,
 ) : ViewModel() {
-    private val podcastId = savedStateHandle.get<String>("podcastId")!!
+    private var podcastId: String? = savedStateHandle.get<String>("podcastId")
 
     val podcast = MutableStateFlow<PodcastItem?>(null)
     val episodes = MutableStateFlow<List<EpisodeItem>>(emptyList())
+    private var fetchJob: Job? = null
 
     val libraryPodcast = podcast.flatMapLatest { p ->
         p?.let { database.podcast(it.id) } ?: flowOf(null)
@@ -48,11 +50,21 @@ class OnlinePodcastViewModel @Inject constructor(
 
     init {
         Timber.d("ViewModel init with podcastId: $podcastId")
-        fetchPodcastData()
+        podcastId?.let(::fetchPodcastData)
     }
 
-    private fun fetchPodcastData() {
-        viewModelScope.launch(Dispatchers.IO) {
+    /** Loads [podcastId], replacing any previously loaded podcast (the home sheet reuses one instance). */
+    fun load(podcastId: String) {
+        if (this.podcastId == podcastId) return
+        this.podcastId = podcastId
+        podcast.value = null
+        episodes.value = emptyList()
+        fetchPodcastData(podcastId)
+    }
+
+    private fun fetchPodcastData(podcastId: String) {
+        fetchJob?.cancel()
+        fetchJob = viewModelScope.launch(Dispatchers.IO) {
             Timber.d("fetchPodcastData called for: $podcastId")
             _isLoading.value = true
             _error.value = null
@@ -119,6 +131,6 @@ class OnlinePodcastViewModel @Inject constructor(
     fun toggleLibrary() = toggleSubscription()
 
     fun retry() {
-        fetchPodcastData()
+        podcastId?.let(::fetchPodcastData)
     }
 }

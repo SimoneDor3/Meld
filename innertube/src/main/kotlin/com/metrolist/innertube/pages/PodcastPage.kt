@@ -37,6 +37,7 @@ data class PodcastPage(
                 endpoint = renderer.onTap.watchEndpoint,
                 libraryAddToken = libraryTokens.addToken,
                 libraryRemoveToken = libraryTokens.removeToken,
+                playbackProgress = renderer.playbackProgress?.fraction,
             )
         }
 

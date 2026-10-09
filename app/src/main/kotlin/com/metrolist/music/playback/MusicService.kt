@@ -32,6 +32,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.datastore.preferences.core.Preferences
@@ -98,6 +99,7 @@ import com.google.common.util.concurrent.MoreExecutors
 import com.metrolist.innertube.YouTube
 import com.metrolist.innertube.models.SongItem
 import com.metrolist.innertube.models.WatchEndpoint
+import com.metrolist.innertube.utils.parseCookieString
 import com.metrolist.innertubex.extraction.ContentHints
 import com.metrolist.lastfm.LastFM
 import com.metrolist.music.MainActivity
@@ -273,6 +275,7 @@ import kotlinx.coroutines.plus
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.TimeoutCancellationException
 import okhttp3.OkHttpClient
 import timber.log.Timber
@@ -572,13 +575,28 @@ class MusicService :
 
     private fun cacheKey(mediaId: String) = "${sessionKey}:$mediaId"
 
+    private class PlaybackTrackingUrls(
+        val playbackUrl: String,
+        val watchtimeUrl: String?,
+    )
+
     private val playbackUrlCache = Collections.synchronizedMap(
-        object : LinkedHashMap<String, String>(0, 0.75f, true) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>): Boolean {
+        object : LinkedHashMap<String, PlaybackTrackingUrls>(0, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, PlaybackTrackingUrls>): Boolean {
                 return size > 500
             }
         }
     )
+
+    // Main thread only. Media ids whose YouTube playback was already registered by their episode
+    // watchtime session, so onPlaybackStatsReady must not register them a second time.
+    private val watchtimeRegisteredMediaIds = mutableSetOf<String>()
+    private var episodeWatchtime: EpisodeWatchtimeSession? = null
+
+    // Play time of the current episode before its watchtime session starts, measured on the 15 s loop.
+    private var episodePlayedMediaId: String? = null
+    private var episodePlayedMs = 0L
+    private var watchtimeSendJob: Job? = null
 
     // Flag to bypass cache when quality changes - forces fresh stream fetch
     private val bypassCacheForQualityChange = mutableSetOf<String>()
@@ -1409,6 +1427,9 @@ class MusicService :
                 if (currentMetadata?.isEpisode == true && player.isPlaying && player.currentPosition > 0) {
                     previousEpisodePosition = player.currentPosition
                     saveEpisodePosition(currentMetadata.id, player.currentPosition)
+                }
+                if (currentMetadata?.isEpisode == true && player.isPlaying) {
+                    tickEpisodeWatchtime()
                 }
             }
         }
@@ -2737,13 +2758,142 @@ class MusicService :
             val savedPosition = database.getPlaybackPosition(episodeId)
             if (savedPosition != null && savedPosition > 0) {
                 withContext(Dispatchers.Main) {
-                    if (player.currentMediaItem?.mediaId == episodeId) {
+                    // Only move forward: playback may already start further in, from YouTube's progress.
+                    if (player.currentMediaItem?.mediaId == episodeId && player.currentPosition < savedPosition) {
                         player.seekTo(savedPosition)
                         Timber.tag(TAG).d("Restored episode position: $episodeId to ${savedPosition}ms")
                     }
                 }
             }
         }
+    }
+
+    private fun durationOrZero(): Long = player.duration.takeIf { it != C.TIME_UNSET }?.coerceAtLeast(0L) ?: 0L
+
+    /**
+     * Starts reporting the playing episode's progress to YouTube so it resumes there in YouTube /
+     * YouTube Music. Called whenever playback starts and on the periodic tick, because the tracking
+     * URLs are only known once the stream has been resolved, which can be after the transition.
+     */
+    private fun maybeStartEpisodeWatchtime() {
+        val mediaItem = player.currentMediaItem ?: return
+        if (mediaItem.metadata?.isEpisode != true || episodeWatchtime?.mediaId == mediaItem.mediaId) return
+        val urls = playbackUrlCache[cacheKey(mediaItem.mediaId)] ?: return
+        val watchtimeUrl = urls.watchtimeUrl ?: return
+        if ("SAPISID" !in parseCookieString(YouTube.cookie.orEmpty())) return
+        if (dataStore.get(PauseListenHistoryKey, false)) return
+        // Like songs, an episode only reaches the YouTube history after the user's history duration.
+        val historyDurationMs = (dataStore[HistoryDuration]?.times(1000f) ?: 30000f).toLong()
+        if (episodePlayedMediaId != mediaItem.mediaId || episodePlayedMs < historyDurationMs) return
+
+        endEpisodeWatchtime()
+        val session =
+            EpisodeWatchtimeSession(
+                mediaId = mediaItem.mediaId,
+                cpn = YouTube.newCpn(),
+                playbackUrl = urls.playbackUrl,
+                watchtimeUrl = watchtimeUrl,
+                startRealtimeMs = SystemClock.elapsedRealtime(),
+                startPositionMs = player.currentPosition,
+            )
+        episodeWatchtime = session
+        watchtimeRegisteredMediaIds += session.mediaId
+        enqueueWatchtime {
+            YouTube
+                .registerPlayback(playbackTracking = session.playbackUrl, cpn = session.cpn)
+                .onFailure { Timber.tag(TAG).w(it, "Episode playback registration failed") }
+        }
+    }
+
+    private fun tickEpisodeWatchtime() {
+        val mediaId = player.currentMediaItem?.mediaId
+        if (episodeWatchtime?.mediaId != mediaId) {
+            if (episodePlayedMediaId != mediaId) {
+                episodePlayedMediaId = mediaId
+                episodePlayedMs = 0L
+            }
+            episodePlayedMs += 15_000L
+        }
+        maybeStartEpisodeWatchtime()
+        val session = episodeWatchtime?.takeIf { it.mediaId == player.currentMediaItem?.mediaId } ?: return
+        session
+            .playingPingIfDue(player.currentPosition, durationOrZero(), SystemClock.elapsedRealtime())
+            ?.let { sendWatchtime(session, it) }
+    }
+
+    private fun onEpisodeWatchtimeDiscontinuity(
+        oldPosition: Player.PositionInfo,
+        newPosition: Player.PositionInfo,
+        reason: Int,
+    ) {
+        val session = episodeWatchtime ?: return
+        if (oldPosition.mediaItem?.mediaId != session.mediaId) return
+        when {
+            reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION ->
+                endEpisodeWatchtime(oldPosition.positionMs, ended = true)
+            newPosition.mediaItem?.mediaId != session.mediaId ->
+                endEpisodeWatchtime(oldPosition.positionMs)
+            reason == Player.DISCONTINUITY_REASON_SEEK ->
+                session
+                    .seekPing(
+                        oldPositionMs = oldPosition.positionMs,
+                        newPositionMs = newPosition.positionMs,
+                        lengthMs = durationOrZero(),
+                        nowRealtimeMs = SystemClock.elapsedRealtime(),
+                        playing = player.playWhenReady,
+                    )?.let { sendWatchtime(session, it) }
+        }
+    }
+
+    /**
+     * Sends the final ping of the current watchtime session and clears it. Without [positionMs]
+     * (the player already moved to another item) the session's last known position is reported.
+     */
+    private fun endEpisodeWatchtime(
+        positionMs: Long? = null,
+        ended: Boolean = false,
+    ) {
+        val session = episodeWatchtime ?: return
+        episodeWatchtime = null
+        // After a transition the player already reports the next item's duration; 0 falls back to the session's known length.
+        val lengthMs = if (positionMs != null && player.currentMediaItem?.mediaId == session.mediaId) durationOrZero() else 0L
+        sendWatchtime(
+            session,
+            session.finalPing(positionMs ?: session.lastPositionMs, lengthMs, SystemClock.elapsedRealtime(), ended),
+        )
+    }
+
+    private fun sendWatchtime(
+        session: EpisodeWatchtimeSession,
+        ping: WatchtimePing,
+    ) = enqueueWatchtime { reportWatchtime(session, ping) }
+
+    // Chained so registration and pings reach YouTube in order even when they're issued back to back.
+    private fun enqueueWatchtime(block: suspend () -> Unit) {
+        val previous = watchtimeSendJob
+        watchtimeSendJob =
+            scope.launch(Dispatchers.IO + SilentHandler) {
+                previous?.join()
+                block()
+            }
+    }
+
+    private suspend fun reportWatchtime(
+        session: EpisodeWatchtimeSession,
+        ping: WatchtimePing,
+    ) {
+        YouTube
+            .reportWatchtime(
+                watchtimeUrl = session.watchtimeUrl,
+                cpn = session.cpn,
+                segmentStartSec = ping.segmentStartSec,
+                segmentEndSec = ping.segmentEndSec,
+                positionSec = ping.positionSec,
+                lengthSec = ping.lengthSec,
+                elapsedRealSec = ping.elapsedRealSec,
+                state = ping.state,
+                final = ping.final,
+            ).onFailure { Timber.tag(TAG).w(it, "Episode watchtime ping failed") }
     }
 
     override fun onMediaItemTransition(
@@ -2766,6 +2916,10 @@ class MusicService :
         retryJob?.cancel()
         retryJob = null
         updateInitialBufferRecovery(player.playbackState)
+
+        if (episodeWatchtime?.mediaId != mediaItem?.mediaId) {
+            endEpisodeWatchtime(ended = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+        }
 
         previousEpisodeId?.let { episodeId ->
             if (previousEpisodePosition > 0) {
@@ -2860,6 +3014,13 @@ class MusicService :
     ) {
         updateInitialBufferRecovery(playbackState)
 
+        if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
+            endEpisodeWatchtime(
+                positionMs = player.currentPosition,
+                ended = playbackState == Player.STATE_ENDED,
+            )
+        }
+
         if (playbackState == Player.STATE_ENDED) {
             player.currentMediaItem?.mediaId?.let { mediaId ->
                 scope.launch(Dispatchers.IO) { markCachedIfFullyDownloaded(mediaId) }
@@ -2947,6 +3108,10 @@ class MusicService :
                 saveEpisodePosition(currentMetadata.id, player.currentPosition)
                 previousEpisodePosition = player.currentPosition
             }
+            episodeWatchtime?.takeIf { it.mediaId == player.currentMediaItem?.mediaId }?.let { session ->
+                val ping = session.pausedPing(player.currentPosition, durationOrZero(), SystemClock.elapsedRealtime())
+                sendWatchtime(session, ping)
+            }
         }
 
         if (playWhenReady) {
@@ -3029,6 +3194,7 @@ class MusicService :
 
         if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED)) {
             if (player.isPlaying) {
+                maybeStartEpisodeWatchtime()
                 discordIntentionalDisconnect = false
                 screenOffHandler.removeCallbacks(screenOffTimeout)
                 screenOffHandler.removeCallbacks(pauseTimeout)
@@ -4839,8 +5005,11 @@ class MusicService :
                     expectedGeneration = cacheGeneration,
                 )
 
-                nonNullPlayback.playbackTracking?.videostatsPlaybackUrl?.baseUrl?.let {
-                    playbackUrlCache[cacheKey(mediaId)] = it
+                nonNullPlayback.playbackTracking?.let { tracking ->
+                    tracking.videostatsPlaybackUrl?.baseUrl?.let {
+                        playbackUrlCache[cacheKey(mediaId)] =
+                            PlaybackTrackingUrls(it, tracking.videostatsWatchtimeUrl?.baseUrl)
+                    }
                 }
 
                 return@Factory dataSpec.withResolvedStream(
@@ -4964,10 +5133,12 @@ class MusicService :
             }
         }
 
+        if (watchtimeRegisteredMediaIds.remove(mediaItem.mediaId)) return
+
         if (playbackStats.totalPlayTimeMs >= historyDurationMs) {
             scope.launch(Dispatchers.IO) {
                 val playbackUrl =
-                    playbackUrlCache[cacheKey(mediaItem.mediaId)]
+                    playbackUrlCache[cacheKey(mediaItem.mediaId)]?.playbackUrl
                 if (playbackUrl == null) {
                     Timber.tag(TAG).w("No playback tracking URL available; skipping YouTube history registration")
                     return@launch
@@ -5169,6 +5340,17 @@ class MusicService :
         if (currentMetadata?.isEpisode == true && player.currentPosition > 0) {
             runBlocking(Dispatchers.IO) {
                 database.updatePlaybackPosition(currentMetadata.id, player.currentPosition)
+            }
+        }
+        episodeWatchtime?.let { session ->
+            episodeWatchtime = null
+            val ping = session.finalPing(player.currentPosition, durationOrZero(), SystemClock.elapsedRealtime())
+            // The service scope is cancelled below, so this last ping can't be queued on it.
+            runBlocking(Dispatchers.IO) {
+                withTimeoutOrNull(2.seconds) {
+                    watchtimeSendJob?.join()
+                    reportWatchtime(session, ping)
+                }
             }
         }
 
@@ -5807,6 +5989,7 @@ class MusicService :
         if (reason == Player.DISCONTINUITY_REASON_SEEK) {
             scheduleCrossfade()
         }
+        onEpisodeWatchtimeDiscontinuity(oldPosition, newPosition, reason)
     }
 
     /**

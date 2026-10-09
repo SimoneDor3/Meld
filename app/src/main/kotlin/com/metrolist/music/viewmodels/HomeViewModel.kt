@@ -27,11 +27,13 @@ import com.metrolist.innertube.utils.completed
 import com.metrolist.music.constants.EnableSpotifyKey
 import com.metrolist.music.constants.SpotifyHomeOnlyKey
 import com.metrolist.music.constants.HideExplicitKey
+import com.metrolist.music.constants.HomeSectionsOrderKey
 import com.metrolist.music.constants.HideVideoSongsKey
 import com.metrolist.music.constants.HideYoutubeShortsKey
 import com.metrolist.music.constants.InnerTubeCookieKey
 import com.metrolist.music.constants.QuickPicks
 import com.metrolist.music.constants.QuickPicksKey
+import com.metrolist.music.constants.ShowPodcastSuggestionsKey
 import com.metrolist.music.constants.ShowWrappedCardKey
 import com.metrolist.music.constants.SpotifyAccessTokenKey
 import com.metrolist.music.utils.SpotifyTokenManager
@@ -53,11 +55,14 @@ import com.metrolist.spotify.models.SpotifyPlaylistOwner
 import com.metrolist.spotify.models.SpotifyPlaylistTracksRef
 import com.metrolist.music.extensions.filterVideoSongs
 import com.metrolist.music.extensions.toEnum
+import com.metrolist.music.models.DefaultHomeLayout
+import com.metrolist.music.models.HomeSectionSetting
 import com.metrolist.music.models.SectionType
 import com.metrolist.music.models.SimilarRecommendation
 import com.metrolist.music.models.SpotifyHomeFilter
 import com.metrolist.music.models.SpotifyHomeSection
 import com.metrolist.music.models.buildSpotifyHome
+import com.metrolist.music.models.deserializeHomeLayout
 import com.metrolist.music.ui.screens.wrapped.WrappedAudioService
 import com.metrolist.music.ui.screens.wrapped.WrappedManager
 import com.metrolist.music.utils.NetworkConnectivityObserver
@@ -65,7 +70,6 @@ import com.metrolist.music.utils.SyncUtils
 import com.metrolist.music.utils.dataStore
 import com.metrolist.music.utils.safeDataStoreEdit
 import com.metrolist.music.utils.get
-import com.metrolist.music.playback.SpotifyProfileCache
 import com.metrolist.music.utils.reportException
 import com.metrolist.spotify.Spotify
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -282,6 +286,15 @@ class HomeViewModel @Inject constructor(
     val podcastNewEpisodes = MutableStateFlow<List<SongItem>>(emptyList())
     val spotifyHomeFilter = MutableStateFlow(SpotifyHomeFilter.ALL)
 
+    val showPodcastSuggestions: StateFlow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ShowPodcastSuggestionsKey] ?: true
+    }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Lazily, true)
+
+    val homeLayout: StateFlow<List<HomeSectionSetting>> = context.dataStore.data
+        .map { prefs -> deserializeHomeLayout(prefs[HomeSectionsOrderKey]) }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Lazily, DefaultHomeLayout)
+
     // What the Spotify home actually shows: Spotify music + YouTube Music podcasts for the
     // selected chip, with episode state re-emitted whenever MusicService saves a position.
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -290,12 +303,21 @@ class HomeViewModel @Inject constructor(
             spotifyHomeSections,
             podcastNewEpisodes,
             savedPodcastShows,
-            spotifyHomeFilter,
+            combine(spotifyHomeFilter, showPodcastSuggestions, homeLayout, ::Triple),
             podcastNewEpisodes.flatMapLatest { episodes ->
                 if (episodes.isEmpty()) flowOf(emptyList()) else database.songEntitiesByIds(episodes.map { it.id })
             },
-        ) { sections, episodes, shows, filter, localPlayback ->
-            sections?.let { buildSpotifyHome(it, episodes, shows, localPlayback.associateBy { song -> song.id }, filter) }
+        ) { sections, episodes, shows, (filter, showPodcasts, layout), localPlayback ->
+            sections?.let {
+                buildSpotifyHome(
+                    it,
+                    if (showPodcasts) episodes else emptyList(),
+                    if (showPodcasts) shows else emptyList(),
+                    localPlayback.associateBy { song -> song.id },
+                    if (showPodcasts) filter else SpotifyHomeFilter.ALL,
+                    layout,
+                )
+            }
         }.stateIn(viewModelScope, SharingStarted.Lazily, null)
     val useSpotifyHome: StateFlow<Boolean> = context.dataStore.data.map { prefs ->
         val enabled = prefs[EnableSpotifyKey] ?: false
@@ -687,30 +709,18 @@ class HomeViewModel @Inject constructor(
 
         // Podcasts come from the user's YouTube Music library; Spotify provides music only.
         // Launched outside the scope below so the YouTube calls don't hold up the Spotify sections.
-        viewModelScope.launch(Dispatchers.IO) { loadYouTubePodcasts() }
+        if (context.dataStore.get(ShowPodcastSuggestionsKey, true)) {
+            viewModelScope.launch(Dispatchers.IO) { loadYouTubePodcasts() }
+        }
 
         try {
-            // These three sources are independent — fetch them concurrently and then
+            // These two sources are independent — fetch them concurrently and then
             // assemble the sections in a fixed display order. Previously they ran
             // strictly sequentially (~1-2.7s of chained round-trips).
-            val (profileTracks, newReleasesResult, homeResult) = coroutineScope {
-                val topTracksDeferred = async { SpotifyProfileCache.getTopTracks(context, database, limit = 20) }
+            val (newReleasesResult, homeResult) = coroutineScope {
                 val newReleasesDeferred = async { Spotify.newReleases(limit = 20) }
                 val homeDeferred = async { Spotify.home(sectionItemsLimit = 10) }
-                Triple(topTracksDeferred.await(), newReleasesDeferred.await(), homeDeferred.await())
-            }
-
-            Timber.d("spotifyHome: top tracks from profile cache = ${profileTracks.size}")
-            val topTracks = if (hideExplicit) profileTracks.filter { !it.explicit } else profileTracks
-            if (topTracks.isNotEmpty()) {
-                sections.add(SpotifyHomeSection(
-                    title = "spotify_top_tracks",
-                    type = SectionType.TRACKS,
-                    tracks = topTracks,
-                ))
-                Timber.d("spotifyHome: added pinned section 'Your Top Tracks' (${topTracks.size} tracks)")
-            } else {
-                Timber.w("spotifyHome: no top tracks — skipping pinned section")
+                newReleasesDeferred.await() to homeDeferred.await()
             }
 
             newReleasesResult.onSuccess { newReleases ->
@@ -801,7 +811,7 @@ class HomeViewModel @Inject constructor(
                 type = SectionType.ARTISTS,
                 artists = artists.map(::toSpotifyArtist),
             )
-            SectionType.TRACKS, SectionType.SHORTCUTS, SectionType.SHOWS -> null
+            SectionType.TRACKS, SectionType.SHORTCUTS, SectionType.SHOWS, SectionType.SPEED_DIAL -> null
         }
     }
 
@@ -1005,6 +1015,19 @@ class HomeViewModel @Inject constructor(
     }
 
     init {
+        var podcastSuggestionsWasOff = false
+        viewModelScope.launch(Dispatchers.IO) {
+            showPodcastSuggestions.collect { enabled ->
+                if (!enabled) {
+                    podcastSuggestionsWasOff = true
+                    spotifyHomeFilter.value = SpotifyHomeFilter.ALL
+                } else if (podcastSuggestionsWasOff) {
+                    podcastSuggestionsWasOff = false
+                    if (useSpotifyHome.value && podcastNewEpisodes.value.isEmpty()) loadYouTubePodcasts()
+                }
+            }
+        }
+
         // Run sync in separate coroutine with cooldown to avoid blocking UI
         viewModelScope.launch(Dispatchers.IO) {
             syncUtils.tryAutoSync()

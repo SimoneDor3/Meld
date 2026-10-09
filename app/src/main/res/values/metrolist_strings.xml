@@ -832,6 +832,8 @@
     <string name="unpin">Unpin</string>
     <string name="randomize_home_order">Randomize home screen order</string>
     <string name="randomize_home_order_desc">Randomly reorder home screen sections using weighted priorities</string>
+    <string name="podcast_suggestions">Podcast suggestions</string>
+    <string name="podcast_suggestions_desc">Show podcasts from your YouTube Music library on the Spotify home</string>
 
     <!-- Daily Discover -->
     <string name="daily_discover_sounds_like">Sounds like %1$s</string>
@@ -1204,4 +1206,9 @@
         <item quantity="other">%d files</item>
     </plurals>
     <string name="discord_information_warning">Meld uses Discord\'s public OAuth2 and Gateway APIs to share what you\'re listening to. Authorization happens through a local browser session that closes itself after capturing the code — nothing is sent to third-party servers. Your token is stored on this device in encrypted preferences and is never shared. Meld connects directly to wss://gateway.discord.gg to publish your activity, and only requests the minimum scope required (sdk.social_layer_presence).</string>
+    <string name="home_sections">Home sections</string>
+    <string name="home_sections_desc">Reorder and hide Spotify home sections</string>
+    <string name="home_sections_reorder_hint">Long press and drag to reorder</string>
+    <string name="home_section_shortcuts">Shortcuts and podcasts</string>
+    <string name="home_section_spotify_feed">Spotify recommendations</string>
 </resources>
