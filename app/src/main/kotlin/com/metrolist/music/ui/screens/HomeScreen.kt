@@ -2761,17 +2761,18 @@ fun HomeScreen(
                                                 is SpotifyHomeFeedItem.Artist -> openSpotifyArtist(item.name)
                                             }
                                         },
-                                        onEpisodeClick = { episode ->
-                                            playerConnection.playQueue(
-                                                ListQueue(
-                                                    title = episode.artists.firstOrNull()?.name,
-                                                    items = listOf(episode.toMediaMetadata().toMediaItem()),
-                                                ),
-                                            )
-                                        },
-                                        onEpisodeLongClick = { episode ->
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            menuState.show { YouTubeSongMenu(episode, menuState::dismiss) }
+                                        onPodcastClick = { podcast ->
+                                            if (podcast.id != null) {
+                                                navController.navigate("online_podcast/${podcast.id}")
+                                            } else {
+                                                val episode = podcast.latestEpisode.song
+                                                playerConnection.playQueue(
+                                                    ListQueue(
+                                                        title = episode.artists.firstOrNull()?.name,
+                                                        items = listOf(episode.toMediaMetadata().toMediaItem()),
+                                                    ),
+                                                )
+                                            }
                                         },
                                         modifier = Modifier.animateItem(),
                                     )

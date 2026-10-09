@@ -7,6 +7,7 @@ package com.metrolist.music.ui.component
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -46,11 +47,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import coil3.compose.AsyncImage
-import com.metrolist.innertube.models.SongItem
 import com.metrolist.music.R
 import com.metrolist.music.constants.GridThumbnailHeight
 import com.metrolist.music.constants.ListItemHeight
 import com.metrolist.music.constants.ThumbnailCornerRadius
+import com.metrolist.music.models.HomePodcast
 import com.metrolist.music.models.SectionType
 import com.metrolist.music.models.SpotifyHomeSection
 import com.metrolist.music.utils.toAlbumItem
@@ -267,12 +268,11 @@ private class ShortcutTile(
     val isNew: Boolean = false,
     val progress: Float? = null,
     val onClick: () -> Unit,
-    val onLongClick: (() -> Unit)? = null,
 )
 
 /**
  * Spotify-style untitled shortcuts grid: two columns of compact cover + title tiles.
- * YouTube Music episodes come first (dot when unplayed, bar when in progress), then
+ * YouTube Music podcasts come first (dot for a new episode, bar when one is in progress), then
  * Spotify's music shortcuts. Not lazy on purpose: it sits inside the home LazyColumn
  * and holds a handful of items.
  */
@@ -280,18 +280,16 @@ private class ShortcutTile(
 fun SpotifyShortcutGrid(
     section: SpotifyHomeSection,
     onShortcutClick: (SpotifyHomeFeedItem) -> Unit,
-    onEpisodeClick: (SongItem) -> Unit,
-    onEpisodeLongClick: (SongItem) -> Unit,
+    onPodcastClick: (HomePodcast) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val tiles = section.episodes.map { episode ->
+    val tiles = section.podcasts.map { podcast ->
         ShortcutTile(
-            title = episode.song.title,
-            coverUrl = episode.song.thumbnail,
-            isNew = episode.isNew,
-            progress = episode.progress,
-            onClick = { onEpisodeClick(episode.song) },
-            onLongClick = { onEpisodeLongClick(episode.song) },
+            title = podcast.title,
+            coverUrl = podcast.thumbnail,
+            isNew = podcast.hasNew,
+            progress = podcast.progress,
+            onClick = { onPodcastClick(podcast) },
         )
     } + section.shortcuts.map { item ->
         when (item) {
@@ -318,7 +316,6 @@ fun SpotifyShortcutGrid(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SpotifyShortcutTile(
     tile: ShortcutTile,
@@ -329,7 +326,7 @@ private fun SpotifyShortcutTile(
             .height(56.dp)
             .clip(MaterialTheme.shapes.small)
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .combinedClickable(onClick = tile.onClick, onLongClick = tile.onLongClick),
+            .clickable(onClick = tile.onClick),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AsyncImage(
