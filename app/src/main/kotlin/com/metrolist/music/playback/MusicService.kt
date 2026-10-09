@@ -592,6 +592,10 @@ class MusicService :
     // watchtime session, so onPlaybackStatsReady must not register them a second time.
     private val watchtimeRegisteredMediaIds = mutableSetOf<String>()
     private var episodeWatchtime: EpisodeWatchtimeSession? = null
+
+    // Play time of the current episode before its watchtime session starts, measured on the 15 s loop.
+    private var episodePlayedMediaId: String? = null
+    private var episodePlayedMs = 0L
     private var watchtimeSendJob: Job? = null
 
     // Flag to bypass cache when quality changes - forces fresh stream fetch
@@ -2778,6 +2782,9 @@ class MusicService :
         val watchtimeUrl = urls.watchtimeUrl ?: return
         if ("SAPISID" !in parseCookieString(YouTube.cookie.orEmpty())) return
         if (dataStore.get(PauseListenHistoryKey, false)) return
+        // Like songs, an episode only reaches the YouTube history after the user's history duration.
+        val historyDurationMs = (dataStore[HistoryDuration]?.times(1000f) ?: 30000f).toLong()
+        if (episodePlayedMediaId != mediaItem.mediaId || episodePlayedMs < historyDurationMs) return
 
         endEpisodeWatchtime()
         val session =
@@ -2799,6 +2806,14 @@ class MusicService :
     }
 
     private fun tickEpisodeWatchtime() {
+        val mediaId = player.currentMediaItem?.mediaId
+        if (episodeWatchtime?.mediaId != mediaId) {
+            if (episodePlayedMediaId != mediaId) {
+                episodePlayedMediaId = mediaId
+                episodePlayedMs = 0L
+            }
+            episodePlayedMs += 15_000L
+        }
         maybeStartEpisodeWatchtime()
         val session = episodeWatchtime?.takeIf { it.mediaId == player.currentMediaItem?.mediaId } ?: return
         session
