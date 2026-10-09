@@ -6,10 +6,14 @@
 package com.metrolist.music.ui.component
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
@@ -27,6 +31,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +46,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import coil3.compose.AsyncImage
+import com.metrolist.innertube.models.SongItem
 import com.metrolist.music.R
 import com.metrolist.music.constants.GridThumbnailHeight
 import com.metrolist.music.constants.ListItemHeight
@@ -54,6 +60,7 @@ import com.metrolist.music.utils.toSongItem
 import com.metrolist.spotify.SpotifyMapper
 import com.metrolist.spotify.models.SpotifyAlbum
 import com.metrolist.spotify.models.SpotifyArtist
+import com.metrolist.spotify.models.SpotifyHomeFeedItem
 import com.metrolist.spotify.models.SpotifyPlaylist
 import com.metrolist.spotify.models.SpotifyTrack
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,6 +83,7 @@ fun resolveSpotifySectionTitle(section: SpotifyHomeSection): String {
         title == "spotify_discover" -> stringResource(R.string.spotify_discover)
         title == "spotify_your_playlists" -> stringResource(R.string.spotify_your_playlists)
         title == "spotify_new_releases" -> stringResource(R.string.spotify_new_releases)
+        title == "your_shows" -> stringResource(R.string.your_shows)
         else -> title
     }
 }
@@ -246,6 +254,119 @@ fun SpotifyPlaylistSectionRow(
                             onLongPress = { onPlaylistLongClick?.invoke(playlist) },
                         )
                     },
+            )
+        }
+    }
+}
+
+private class ShortcutTile(
+    val title: String,
+    val coverUrl: String?,
+    val isCircle: Boolean = false,
+    val isNew: Boolean = false,
+    val progress: Float? = null,
+    val onClick: () -> Unit,
+    val onLongClick: (() -> Unit)? = null,
+)
+
+/**
+ * Spotify-style untitled shortcuts grid: two columns of compact cover + title tiles.
+ * YouTube Music episodes come first (dot when unplayed, bar when in progress), then
+ * Spotify's music shortcuts. Not lazy on purpose: it sits inside the home LazyColumn
+ * and holds a handful of items.
+ */
+@Composable
+fun SpotifyShortcutGrid(
+    section: SpotifyHomeSection,
+    onShortcutClick: (SpotifyHomeFeedItem) -> Unit,
+    onEpisodeClick: (SongItem) -> Unit,
+    onEpisodeLongClick: (SongItem) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tiles = section.episodes.map { episode ->
+        ShortcutTile(
+            title = episode.song.title,
+            coverUrl = episode.song.thumbnail,
+            isNew = episode.isNew,
+            progress = episode.progress,
+            onClick = { onEpisodeClick(episode.song) },
+            onLongClick = { onEpisodeLongClick(episode.song) },
+        )
+    } + section.shortcuts.map { item ->
+        when (item) {
+            is SpotifyHomeFeedItem.Playlist -> ShortcutTile(item.name, item.imageUrl, onClick = { onShortcutClick(item) })
+            is SpotifyHomeFeedItem.Album -> ShortcutTile(item.name, item.imageUrl, onClick = { onShortcutClick(item) })
+            is SpotifyHomeFeedItem.Artist -> ShortcutTile(item.name, item.imageUrl, isCircle = true, onClick = { onShortcutClick(item) })
+        }
+    }
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        tiles.chunked(2).forEach { rowTiles ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowTiles.forEach { tile ->
+                    SpotifyShortcutTile(tile = tile, modifier = Modifier.weight(1f))
+                }
+                if (rowTiles.size == 1) Box(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun SpotifyShortcutTile(
+    tile: ShortcutTile,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .height(56.dp)
+            .clip(MaterialTheme.shapes.small)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .combinedClickable(onClick = tile.onClick, onLongClick = tile.onLongClick),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(
+                model = tile.coverUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(56.dp)
+                    .then(if (tile.isCircle) Modifier.clip(CircleShape) else Modifier),
+            )
+            Text(
+                text = tile.title,
+                style = MaterialTheme.typography.labelLarge,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp),
+            )
+            if (tile.isNew) {
+                Box(
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                )
+            }
+        }
+        tile.progress?.let { progress ->
+            LinearProgressIndicator(
+                progress = { progress },
+                gapSize = 0.dp,
+                drawStopIndicator = {},
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .height(2.dp),
             )
         }
     }
