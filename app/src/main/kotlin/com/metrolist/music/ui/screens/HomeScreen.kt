@@ -1247,8 +1247,9 @@ fun HomeScreen(
             ) {
                 item {
                     if (isSpotifyHome && spotifyHomeSections != null) {
-                        // Podcast chips only make sense once the YouTube Music library has podcasts.
-                        if (showPodcastSuggestions && (podcastNewEpisodes.isNotEmpty() || savedPodcastShows.isNotEmpty())) {
+                        // Podcast chips only make sense once the YouTube Music library has podcasts;
+                        // stay visible while a filter is applied so it can always be cleared.
+                        if (showPodcastSuggestions && (spotifyHomeFilter != SpotifyHomeFilter.ALL || podcastNewEpisodes.isNotEmpty() || savedPodcastShows.isNotEmpty())) {
                             ChipsRow(
                                 chips = listOf(
                                     SpotifyHomeFilter.ALL to stringResource(R.string.filter_all),

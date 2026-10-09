@@ -706,15 +706,17 @@ class HomeViewModel @Inject constructor(
         Timber.d("spotifyHome: loadSpotifyHomeSections() START (hideExplicit=$hideExplicit)")
         val sections = mutableListOf<SpotifyHomeSection>()
 
+        // Podcasts come from the user's YouTube Music library; Spotify provides music only.
+        // Launched outside the scope below so the YouTube calls don't hold up the Spotify sections.
+        if (context.dataStore.get(ShowPodcastSuggestionsKey, true)) {
+            viewModelScope.launch(Dispatchers.IO) { loadYouTubePodcasts() }
+        }
+
         try {
             // These three sources are independent — fetch them concurrently and then
             // assemble the sections in a fixed display order. Previously they ran
             // strictly sequentially (~1-2.7s of chained round-trips).
             val (profileTracks, newReleasesResult, homeResult) = coroutineScope {
-                // Podcasts come from the user's YouTube Music library; Spotify provides music only.
-                if (context.dataStore.get(ShowPodcastSuggestionsKey, true)) {
-                    launch { loadYouTubePodcasts() }
-                }
                 val topTracksDeferred = async { SpotifyProfileCache.getTopTracks(context, database, limit = 20) }
                 val newReleasesDeferred = async { Spotify.newReleases(limit = 20) }
                 val homeDeferred = async { Spotify.home(sectionItemsLimit = 10) }
